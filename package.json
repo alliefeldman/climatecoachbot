@@ -16,7 +16,9 @@
   "author": "Shay DeWael",
   "license": "MIT",
   "dependencies": {
+    "@octokit/rest": "^21.1.1",
     "axios": "^1.8.4",
+    "dayjs": "^1.11.13",
     "discord-interactions": "^4.0.0",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",

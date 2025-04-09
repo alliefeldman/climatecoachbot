@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import axios from "axios";
 
 export async function DiscordRequest(endpoint, options) {
   // append endpoint to root API URL
@@ -38,10 +39,50 @@ export async function InstallGlobalCommands(appId, commands) {
 
 // Simple method that returns a random emoji from list
 export function getRandomEmoji() {
-  const emojiList = ['😭','😄','😌','🤓','😎','😤','🤖','😶‍🌫️','🌏','📸','💿','👋','🌊','✨'];
+  const emojiList = ['😭', '😄', '😌', '🤓', '😎', '😤', '🤖', '😶‍🌫️', '🌏', '📸', '💿', '👋', '🌊', '✨'];
   return emojiList[Math.floor(Math.random() * emojiList.length)];
 }
 
 export function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+
+// Function to fetch the contributors for a given repository
+export async function fetchContributors(owner, repoName, token) {
+  try {
+    const response = await axios.get(`https://api.github.com/repos/${owner}/${repoName}/contributors`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching contributors:", error);
+    return [];
+  }
+}
+
+// Function to get active contributors in the past week
+export async function getActiveContributors(owner, repoName, token) {
+  console.log("active contributors start");
+  const contributors = await fetchContributors(owner, repoName, token);
+
+  // Now fetch the commit data for each contributor for the past week
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7); // Date for one week ago
+
+  let activeContributors = 0;
+
+  for (const contributor of contributors) {
+    // Fetch commits made by this contributor in the past week
+    const commits = await fetchCommits(owner, repoName, contributor.login, oneWeekAgo, token);
+
+    // If there are commits, count this contributor as active
+    if (commits.length > 0) {
+      activeContributors++;
+    }
+  }
+
+  return activeContributors;
 }
