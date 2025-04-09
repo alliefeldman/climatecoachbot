@@ -7,7 +7,11 @@ import { URL } from 'url';
 import cron from "node-cron";
 import { getActiveContributors } from "./active-contributors.js"
 import fs from 'fs';
+import { fetchGitHubData } from "./github-helpers.js"
+import { calculateMetrics } from "./calculate-metrics.js"
+import { Octokit } from "@octokit/rest";
 
+export const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
 function saveStateToFile() {
   fs.writeFileSync('state.json', JSON.stringify({
@@ -38,7 +42,6 @@ const app = express(); // Initialize Express app
 app.listen(3000, () => {
   console.log("Server is running on http://localhost:3000");
 });
-
 
 
 
@@ -272,22 +275,25 @@ client.on("messageCreate", async (message) => {
         console.log(`No repository data for ${message.guild.name}. Skipping...`);
         return message.reply("No repository data found. Please link a GitHub repository first.");
       }
+      const githubData = await fetchGitHubData(repoData.owner, repoData.repoName);
 
-      try {
-        // Fetch active contributors count
-        const activeContributors = await getActiveContributors(
-          repoData.owner,
-          repoData.repoName,
-          repoData.accessToken
-        );
+      console.log("githubData issues length = ", typeof githubData.issues);
+      const metrics = await calculateMetrics(
+        githubData.repo,
+        "issue",
+        Array(repoData.issues),
+        repoData.issueComments,
+        octokit
+      );
+      // const metrics = await calculateMetrics(
+      //    githubData.repo,
+      //   issues: githubData.issues,
+      //   prs: githubData.prs,
+      //   issueComments: githubData.issueComments,
+      //   prComments: githubData.prComments,
+      // );
 
-        // Send the result to the server
-        const channel = message.channel; // The same channel where the message was sent
-        channel.send(`📝 Active contributors in the past week: ${activeContributors}`);
-      } catch (error) {
-        console.error(`Error fetching active contributors: ${error}`);
-        message.reply("Sorry, there was an error fetching the active contributors.");
-      }
+      await message.channel.send("metrics: ", metrics.toString());
     } else {
       // Default response for other messages
       console.log("content", message);

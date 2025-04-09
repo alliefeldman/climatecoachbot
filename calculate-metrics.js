@@ -1,8 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import dayjs from "dayjs";
-import { findToxicity } from "./find_toxicity";
-import { getTime, checkQuota, getBots } from "./helper";
-import { all } from "express/lib/application";
+import { findToxicity } from "./find-toxicity.js";
+import { getTime, checkQuota, getBots } from "./helpers.js";
 
 const DEBUG = true;
 const bots = getBots();
@@ -64,7 +63,8 @@ async function findNewAuthors(repo, convType, since, users, octokit) {
   return { newAuthors, avgTenure, recurringAuthors };
 }
 
-async function calMetrics(repo, convType, allDiscussions, comments, window, octokit) {
+export async function calculateMetrics(repo, convType, allDiscussions, comments, window, octokit) {
+  console.log("all discussions", allDiscussions);
   if (allDiscussions.length === 0) {
     res = {
       "num_closed": 0,
@@ -73,7 +73,7 @@ async function calMetrics(repo, convType, allDiscussions, comments, window, octo
       "median_close_time": 0,
       "median_comments_recent": 0,
       "avg_comments_recent": 0,
-      "num_open": 0,
+      "num_opened": 0,
       "num_unique_authors": 0,
       "unique_authors": [],
       "new_authors": [],
@@ -136,5 +136,34 @@ async function calMetrics(repo, convType, allDiscussions, comments, window, octo
   });
 
   // ok should this use all of the comments though? or am i tripping
-  const toxicConvosInCurrentWindow
+  const toxicConvosInCurrentWindow = findToxicity(repo, commentsInCurrentWindow);
+
+  const numToxicConvos = toxicConvosInCurrentWindow.toxic.length;
+
+  res = {
+    "num_closed": numClosed,
+    "num_closed_0_comments": len(
+      cur_win_closed.loc[
+      cur_win_closed["num_comments"] == 0]),
+    "median_close_time": round(median_close_time, 1),
+    "avg_close_time": round(avg_close_time, 1),
+    "num_opened": numOpened,
+    "num_unique_authors": numUniqueAuthors,
+    "unique_authors": uniqueAuthorLogins,
+    "new_authors": newAuthorLogins,
+    "num_new_authors": numNewAuthors,
+    "recur_authors": recurringAuthorLogins,
+    "num_recur_authors": numRecurringAuthors,
+    "avg_tenure": avgTenure,
+    "median_comments_before_close": round(median_comments_before_close, 1),
+    "avg_comments_before_close": round(avg_comments_before_close, 1),
+    "median_comments_recent": round(median_comments_recent, 1),
+    "avg_comments_recent": round(avg_comments_recent, 1),
+    "num_toxic": num_toxic,
+    "toxic": copy.deepcopy(toxic_convs["toxic"]),
+    // "neg_senti": copy.deepcopy(toxic_convs["neg_senti"]),
+    "max_toxic": round(toxic_convs["max_toxic"], 3),
+    "max_attack": round(toxic_convs["max_attack"], 3)
+  }
+
 }
