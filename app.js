@@ -4,6 +4,7 @@ import axios from "axios";
 import express from "express"; // Import Express
 import crypto from 'crypto';
 import { URL } from 'url';
+import cron from "node-cron";
 
 const app = express(); // Initialize Express app
 
@@ -18,8 +19,9 @@ const client = new Client({
 
 const CHANNEL_NAME = "climatecoach";
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
-const REDIRECT_URI = "http://localhost/callback"; // Adjust this URL based on your OAuth setup
+const REDIRECT_URI = "http://18.116.23.143:3000/callback";
 const usersRepoData = new Map();
+const messageIds = new Map(); // Map to store message IDs associated with the state
 
 // Generate a random state value
 const state = crypto.randomBytes(16).toString('hex');  // Generates a 32-character hex string
@@ -76,8 +78,9 @@ client.once("ready", async () => {
     const messages = await channel.messages.fetch({ limit: 1 }); // Fetch the most recent message
 
     if (messages.size !== 10000) {
-      // If there are no messages in the channel, send the welcome message
-      channel.send(WELCOME_MESSAGE);
+      const welcomeMessage = await channel.send(WELCOME_MESSAGE);
+      messageIds.set(state, welcomeMessage.id);
+
     }
   });
 
@@ -127,6 +130,9 @@ app.get("/callback", async (req, res) => {
 
   // Exchange code for access token
   try {
+
+    const messageId = messageIds.get(callbackState);
+
     const response = await axios.post(
       "https://github.com/login/oauth/access_token",
       null,
@@ -149,6 +155,16 @@ app.get("/callback", async (req, res) => {
     // Store user's access token for future use
     usersRepoData.set(req.query.state, { accessToken });
 
+    // Find the #climatecoach channel
+    const channel = client.channels.cache.find(ch => ch.name === CHANNEL_NAME && ch.isTextBased());
+
+    if (channel && messageId) {
+      const welcomeMessage = await channel.messages.fetch(messageId);
+      await welcomeMessage.edit("✅ **GitHub authentication successful!** 🎉 You can now connect a repository.");
+    } else {
+      console.error("Channel not found or message ID invalid!");
+    }
+
   } catch (error) {
     res.send("Error authenticating with GitHub.");
     console.error(error);
@@ -170,5 +186,39 @@ async function fetchRepoData(owner, repoName, token) {
     return { error: "Failed to fetch repository data." };
   }
 }
+client.on("messageCreate", async (message) => {
+  // Avoid bot replying to itself
+  if (message.author.bot) return;
+
+  // Check if the message was sent in the correct channel
+  if (message.channel.name === "climatecoach") {
+
+    // Example of checking the content of the message
+    if (message.content.includes("hello")) {
+      // If the message contains "hello", reply with a custom message
+      await message.reply("Hello! How can I assist you with your GitHub repository?");
+    } else if (message.content.includes("help")) {
+      // If the message contains "help", reply with a help message
+      await message.reply("Sure! Type 'hello' for basic instructions.");
+    } else {
+      // Default response for other messages
+      await message.reply("I didn't quite catch that. Can you please provide more details?");
+    }
+  }
+});
+
+// Send a message every minute
+cron.schedule("* * * * *", async () => {
+  console.log("⏰ Running task every minute...");
+
+  client.guilds.cache.forEach(async (guild) => {
+    const channel = guild.channels.cache.find(ch => ch.name === CHANNEL_NAME && ch.isTextBased());
+
+    if (channel) {
+      await channel.send("🔁 This is a test message sent every minute.");
+    }
+  });
+});
+
 
 client.login(process.env.DISCORD_TOKEN);
