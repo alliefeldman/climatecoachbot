@@ -1,22 +1,32 @@
 
 const TOXIC_THRES = 0.4;
 
-export async function findToxicity(repo, convos, since, end, octokit) {
+export async function findToxicity(repo, commentsInCurrentWindow, allDiscussions, since, end) {
   let toxicConvos = [];
   let negativeSentimentConvos = [];
 
-  const currentConvos = convos.filter(convo => {
-    const createdAt = convo.created_at;
-    return createdAt >= since && createdAt < end;
+  // const currentConvos = convos.filter(convo => {
+  //   const createdAt = convo.created_at;
+  //   return createdAt >= since && createdAt < end;
+  // })
+  const convoIds = commentsInCurrentWindow.map(comment => comment.issue_url);
+  const relevantConvos = allDiscussions.filter(discussion => {
+    return convoIds.includes(discussion.url);
   })
+  console.log("relevant convos", relevantConvos.length);
 
   let toxicComments = [];
   let attackComments = [];
 
-  for (const convo of currentConvos) {
-    const issue = repo.getIssue(conv["number"]);
+  for (const convo of relevantConvos) {
 
-    const comments = issue.getComments();
+    console.log("the convo?", convo);
+
+    const issue = repo.getIssue(convo["number"]);
+
+
+    const comments = convo.getComments();
+    console.log("we got here yay");
 
     for (const comment of comments) {
       const { toxic, attack } = getPerspectiveScore(comment.body);
@@ -33,10 +43,10 @@ export async function findToxicity(repo, convos, since, end, octokit) {
   }
 
   return {
-    "toxic_convos": toxicConvos,
-    "max_toxic": max_toxic,
-    "max_attack": max_attack,
-    "neg_senti": negativeSentimentConvos
+    toxicConvos,
+    max_toxic,
+    max_attack,
+    negativeSentimentConvos
   }
 
 

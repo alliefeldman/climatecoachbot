@@ -7,7 +7,7 @@ import { URL } from 'url';
 import cron from "node-cron";
 import { getActiveContributors } from "./active-contributors.js"
 import fs from 'fs';
-import { fetchGitHubData } from "./github-helpers.js"
+// import { fetchGitHubData, getRepoObject } from "./github-helpers.js"
 import { calculateMetrics } from "./calculate-metrics.js"
 import { Octokit } from "@octokit/rest";
 
@@ -144,33 +144,33 @@ client.once("ready", async () => {
   });
 });
 
-// Every 5 minutes
-cron.schedule("*/65 * * * *", async () => {
-  console.log("⏰ Sending daily message...");
+// Every 65 minutes
+// cron.schedule("*/65 * * * *", async () => {
+//   console.log("⏰ Sending daily message...");
 
-  client.guilds.cache.forEach(async (guild) => {
-    try {
-      const channel = guild.channels.cache.find(
-        (ch) => ch.name === CHANNEL_NAME && ch.isTextBased()
-      );
-      console.log("does it get here");
-      if (!channel) return;
-      await channel.send("🌅 Good morning! Here's your daily update.");
+//   client.guilds.cache.forEach(async (guild) => {
+//     try {
+//       const channel = guild.channels.cache.find(
+//         (ch) => ch.name === CHANNEL_NAME && ch.isTextBased()
+//       );
+//       console.log("does it get here");
+//       if (!channel) return;
+//       await channel.send("🌅 Good morning! Here's your daily update.");
 
-      const repoData = usersRepoData.get(guild.id); // Get repo data for the guild
-      if (!repoData || !repoData.owner || !repoData.repoName) {
-        console.log(`No repository data for ${guild.name}. Skipping...`);
-        return;
-      }
-      const activeContributors = await getActiveContributors(repoData.owner, repoData.repoName, repoData.accessToken);
-      channel.send(`📝 Active contributors in the past week: ${activeContributors}`);
-      console.log(`✅ Sent to ${guild.name} (${channel.name})`);
+//       const repoData = usersRepoData.get(guild.id); // Get repo data for the guild
+//       if (!repoData || !repoData.owner || !repoData.repoName) {
+//         console.log(`No repository data for ${guild.name}. Skipping...`);
+//         return;
+//       }
+//       // const activeContributors = await getActiveContributors(repoData.owner, repoData.repoName, repoData.accessToken);
+//       // channel.send(`📝 Active contributors in the past week: ${activeContributors}`);
+//       // console.log(`✅ Sent to ${guild.name} (${channel.name})`);
 
-    } catch (err) {
-      console.error(`❌ Error in ${guild.name}:`, err);
-    }
-  });
-});
+//     } catch (err) {
+//       console.error(`❌ Error in ${guild.name}:`, err);
+//     }
+//   });
+// });
 
 // Handle OAuth callback
 app.get("/callback", async (req, res) => {
@@ -275,22 +275,16 @@ client.on("messageCreate", async (message) => {
         console.log(`No repository data for ${message.guild.name}. Skipping...`);
         return message.reply("No repository data found. Please link a GitHub repository first.");
       }
-      const githubData = await fetchGitHubData(repoData.owner, repoData.repoName);
+      // const githubData = await fetchGitHubData(repoData.owner, repoData.repoName);
 
-      console.log("githubData issues length = ", typeof githubData.issues);
-      const metrics = await calculateMetrics(
-        githubData.repo,
-        "issue",
-        Array(repoData.issues),
-        repoData.issueComments,
-        octokit
-      );
-      // const metrics = await calculateMetrics(
-      //    githubData.repo,
-      //   issues: githubData.issues,
-      //   prs: githubData.prs,
-      //   issueComments: githubData.issueComments,
-      //   prComments: githubData.prComments,
+
+      // console.log("githubData issues length = ", typeof githubData.issues);
+      const metrics = await calculateMetrics(repoData.owner, repoData.repoName); // from the past x window(s) compared to the last window
+      //   githubData.repo,
+      //   "issue",
+      //   Object.values(githubData.issues),
+      //   Object.values(githubData.issueComments),
+      //   1 // most recent week? i think that's what this means
       // );
 
       await message.channel.send("metrics: ", metrics.toString());

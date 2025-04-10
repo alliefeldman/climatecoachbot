@@ -5,26 +5,26 @@ import { octokit } from "./app.js";
 // You'll need to set your GitHub token in an environment variable
 
 
-async function getRepoObject(owner, repoName) {
+export async function getRepoObject(owner, repoName) {
   console.log(`Fetching data for repository: ${owner}/${repoName}`);
   const repoObject = await octokit.repos.get({ owner, repo: repoName });
   return repoObject;
 }
 
-async function getAllIssues(owner, repoName) {
+export async function getAllIssues(owner, repoName) {
   const issues = await octokit.paginate(octokit.issues.listForRepo, {
     owner,
     repo: repoName,
     state: 'all',
-    per_page: 100
+    per_page: 100,
+
   });
 
   // filter out PRs
-  const filteredIssues = issues.filter(issue => !issue.pull_request);
-  return Object.values(filteredIssues);
+  return issues.filter(issue => !issue.pull_request);
 }
 
-async function getAllPullRequests(owner, repoName) {
+export async function getAllPullRequests(owner, repoName) {
   const prs = await octokit.paginate(octokit.pulls.list, {
     owner,
     repo: repoName,
@@ -50,14 +50,14 @@ async function getAllPRComments(owner, repoName) {
 }
 
 
-export async function fetchGitHubData(owner, repoName) {
-  const [repo, issues, prs, issueComments, prComments] = await Promise.all([
-    getRepoObject(owner, repoName),
-    getAllIssues(owner, repoName),
-    getAllPullRequests(owner, repoName),
-    getAllIssueComments(owner, repoName),
-    getAllPRComments(owner, repoName)
-  ]);
+// export async function fetchGitHubData(owner, repoName) {
+//   const [repo, issues, prs, issueComments, prComments] = await Promise.all([
+//     getRepoObject(owner, repoName),
+//     getAllIssues(owner, repoName),
+//     getAllPullRequests(owner, repoName),
+//     getAllIssueComments(owner, repoName),
+//     getAllPRComments(owner, repoName)
+//   ]);
 
-  return { repo, issues, prs, issueComments, prComments };
-}
+//   return { repo, issues, prs, issueComments, prComments };
+// }
