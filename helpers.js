@@ -1,7 +1,7 @@
-export function getTime(windowOffset) {
+export function getTime(weeksAgo, daysAgo) {
+
   const now = new Date();
-  now.setMonth(now.getMonth() - windowOffset); // Subtracts 'windowOffset' months
-  now.setDate(1); // Set to the first day of the month
+  now.setDate(now.getDate() - (weeksAgo * 7) - daysAgo);
   now.setHours(0, 0, 0, 0); // Set to midnight (00:00:00)
   return now.toISOString(); // Return ISO format string (e.g., '2025-03-01T00:00:00.000Z')
 }

@@ -10,6 +10,8 @@ import fs from 'fs';
 // import { fetchGitHubData, getRepoObject } from "./github-helpers.js"
 import { calculateMetrics } from "./calculate-metrics.js"
 import { Octokit } from "@octokit/rest";
+import { generateReportMessage } from "./generate-report-message.js"
+import { report } from "process";
 
 export const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
@@ -269,6 +271,8 @@ client.on("messageCreate", async (message) => {
   if (message.channel.name === "climatecoach") {
     // Example of checking the content of the message
     if (message.content.includes("report")) {
+
+      console.log("key...", process.env.PERS_API_KEY);
       // If the message contains "help", reply with a help message
       const repoData = usersRepoData.get(message.guild.id); // Get repo data for the guild
       if (!repoData || !repoData.owner || !repoData.repoName) {
@@ -279,15 +283,38 @@ client.on("messageCreate", async (message) => {
 
 
       // console.log("githubData issues length = ", typeof githubData.issues);
-      const metrics = await calculateMetrics(repoData.owner, repoData.repoName); // from the past x window(s) compared to the last window
-      //   githubData.repo,
-      //   "issue",
-      //   Object.values(githubData.issues),
-      //   Object.values(githubData.issueComments),
-      //   1 // most recent week? i think that's what this means
-      // );
 
-      await message.channel.send("metrics: ", metrics.toString());
+      // const lastMetrics = await calculateMetrics(repoData.owner, repoData.repoName, 0, 1);
+      // const currentMetrics = await calculateMetrics(repoData.owner, repoData.repoName, 0, 0);
+
+      const content = fs.readFileSync("result.json", "utf-8").trim();
+
+      if (!content) {
+        console.log("📂 result file is empty. Initializing with empty maps.");
+        return;
+      }
+
+      const data = JSON.parse(content);
+      const lastMetrics = data.lastMetrics;
+      const currentMetrics = data.currentMetrics;
+      // from the past x window(s) compared to the last window
+      console.log("metrics obtained :)");
+
+      const reportMessageBlocks = generateReportMessage(lastMetrics, currentMetrics);
+      // console.log("wha", strinigfiedMetricsForNow);
+      // console.log("len, /2", strinigfiedMetricsForNow.length, (strinigfiedMetricsForNow.length / 2))
+
+      for (let block of reportMessageBlocks) {
+        await message.channel.send(block);
+      }
+
+      fs.writeFileSync('result.json', JSON.stringify({
+        lastMetrics: lastMetrics,
+        currentMetrics: currentMetrics,
+      }));
+
+      // await message.channel.send(`metrics 1/2:\n\n${strinigfiedMetricsForNow.slice(0, (strinigfiedMetricsForNow.length / 2))}`);
+      // await message.channel.send(`metrics 2/2:\n\n${strinigfiedMetricsForNow.slice((strinigfiedMetricsForNow.length / 2), strinigfiedMetricsForNow.length)}`);
     } else {
       // Default response for other messages
       console.log("content", message);

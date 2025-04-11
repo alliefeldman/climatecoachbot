@@ -11,43 +11,44 @@ export async function getRepoObject(owner, repoName) {
   return repoObject;
 }
 
-export async function getAllIssues(owner, repoName) {
+export async function getRecentIssues(owner, repoName, since) {
   const issues = await octokit.paginate(octokit.issues.listForRepo, {
     owner,
     repo: repoName,
     state: 'all',
     per_page: 100,
-
+    since: since
   });
 
   // filter out PRs
   return issues.filter(issue => !issue.pull_request);
 }
 
-export async function getAllPullRequests(owner, repoName) {
-  const prs = await octokit.paginate(octokit.pulls.list, {
+export async function getRecentPullRequests(owner, repoName, since) {
+  // gets all of them even from window -1, but it would only make it slower
+  const prs = await octokit.paginate(octokit.issues.listForRepo, {
     owner,
     repo: repoName,
     state: 'all',
-    per_page: 100
+    per_page: 100,
+    since: since
   });
-
-  return prs;
+  return prs.filter(pr => pr.pull_request);
 }
-async function getAllIssueComments(owner, repoName) {
-  return await octokit.paginate(octokit.issues.listCommentsForRepo, {
-    owner,
-    repo: repoName,
-    per_page: 100
-  });
-}
-async function getAllPRComments(owner, repoName) {
-  return await octokit.paginate(octokit.pulls.listCommentsForRepo, {
-    owner,
-    repo: repoName,
-    per_page: 100
-  });
-}
+// export async function getAllIssueComments(owner, repoName) {
+//   return await octokit.paginate(octokit.issues.listCommentsForRepo, {
+//     owner,
+//     repo: repoName,
+//     per_page: 100
+//   });
+// }
+// export async function getAllPRComments(owner, repoName) {
+//   return await octokit.paginate(octokit.pulls.listCommentsForRepo, {
+//     owner,
+//     repo: repoName,
+//     per_page: 100
+//   });
+// }
 
 
 // export async function fetchGitHubData(owner, repoName) {

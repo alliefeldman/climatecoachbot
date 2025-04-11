@@ -1,52 +1,111 @@
+import { Octokit } from "@octokit/rest";
+import "dotenv/config";
+import { checkQuota } from "./helpers.js";
 
-const TOXIC_THRES = 0.4;
+const GOOGLEAPIKEY = process.env.PERS_API_KEY;
 
-export async function findToxicity(repo, commentsInCurrentWindow, allDiscussions, since, end) {
-  let toxicConvos = [];
-  let negativeSentimentConvos = [];
+const perspectiveUrl = `https://commentanalyzer.googleapis.com/v1alpha1/comments:analyze?key=${GOOGLEAPIKEY}`;
+
+async function getPerspectiveScore(text) {
+  let toxic = null;
+  let attack = null;
+
+  const dataDict = {
+    "comment": {
+      "text": text
+    },
+    "requestedAttributes": {
+      "TOXICITY": {},
+      "IDENTITY_ATTACK": {}
+    }
+  };
+
+  try {
+    const perspectiveResponse = await fetch(perspectiveUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(dataDict)
+    });
+
+    const perspectiveData = await perspectiveResponse.json();
+    toxic = perspectiveData?.attributeScores?.TOXICITY?.summaryScore?.value;
+    attack = perspectiveData?.attributeScores?.IDENTITY_ATTACK?.summaryScore?.value;
+  } catch {
+    console.error("Error calling Perspective API:", error);
+
+  }
+
+  return { toxic, attack };
+
+
+}
+
+
+const TOXIC_THRES = 0.1; // make higher of course
+
+export async function findToxicity(repo, recentDiscussions, since, end) {
+  let octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+
+  const toxicConvos = new Set();
+  const toxicComments = [];
+  // let negativeSentimentConvos = [];
+
+  let maxToxicity = null;
+  // let maxAttack = 0;
 
   // const currentConvos = convos.filter(convo => {
   //   const createdAt = convo.created_at;
   //   return createdAt >= since && createdAt < end;
   // })
-  const convoIds = commentsInCurrentWindow.map(comment => comment.issue_url);
-  const relevantConvos = allDiscussions.filter(discussion => {
-    return convoIds.includes(discussion.url);
-  })
-  console.log("relevant convos", relevantConvos.length);
 
-  let toxicComments = [];
-  let attackComments = [];
+  for (let discussion of recentDiscussions) {
+    await checkQuota(octokit);
 
-  for (const convo of relevantConvos) {
+    const issue_number = discussion?.number; // Unique ID for PR or Issue
+    // go through their comments and see if > 1 is toxic
+    const comments = (await octokit.issues.listComments({
+      owner: repo.data.owner.login,
+      repo: repo.data.name,
+      issue_number: issue_number
+    })).data;
 
-    console.log("the convo?", convo);
+    for (let comment of comments) {
+      const { toxic: toxic, attack: attack } = await getPerspectiveScore(comment.body);
 
-    const issue = repo.getIssue(convo["number"]);
 
+      const isToxic = toxic >= TOXIC_THRES;
 
-    const comments = convo.getComments();
-    console.log("we got here yay");
+      const createdAt = comment.created_at;
+      const isRecent = createdAt >= since && createdAt < end;
 
-    for (const comment of comments) {
-      const { toxic, attack } = getPerspectiveScore(comment.body);
-      toxicComments.append(toxic);
-      attackComments.append(toxic);
-
-      if (toxic > TOXIC_THRES || attack > TOXIC_THRES) {
-        toxicConvos.append({
-          "title": issue.title,
-          "link": issue.html_url
-        })
+      if (isToxic) {
+        // Check if issue is in 
+        if (!(toxicConvos.has(discussion))) {
+          toxicConvos.add(discussion);
+        }
       }
+      if (isRecent) {
+        if (!maxToxicity || (maxToxicity && toxic > maxToxicity)) {
+          maxToxicity = toxic;
+        }
+      }
+
+      if (isRecent && isToxic) {
+        toxicComments.push(comment);
+      }
+
     }
   }
-
+  const toxicConvosArray = [...toxicConvos];
   return {
-    toxicConvos,
-    max_toxic,
-    max_attack,
-    negativeSentimentConvos
+    toxicConvosArray,
+    toxicComments,
+    // attackComments,
+    maxToxicity, // max toxicity is as of now, max toxicity for 
+    // maxAttack,
+    // negativeSentimentConvos
   }
 
 

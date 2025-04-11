@@ -4,25 +4,33 @@ import { getTime, checkQuota, getBots } from "./helpers.js";
 import { median, average } from 'simple-statistics';
 import { Octokit } from "@octokit/rest";
 import "dotenv/config";
-import { getRepoObject, getAllIssues, getAllPullRequests } from "./github-helpers.js";
+import { getRepoObject, getRecentIssues, getRecentPullRequests } from "./github-helpers.js";
 
 const DEBUG = true;
 
-async function findNewAuthors(repo, convType, since, users) {
+async function getAvgTenure(tenures) {
+  let tenuresArray = []
+  for (let userLogin of Object.keys(tenures)) {
+    tenuresArray.push(tenures[userLogin]);
+  }
+  return tenuresArray.length > 0 ? average(tenuresArray) : 0;
+}
+
+async function getAuthorStats(repo, since, end, uniqueAuthors, tenures) {
+
   let octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
-  await checkQuota(octokit);
+
   // Ensure that you can safely update 'repo' without breaking the input value
 
   const newAuthors = [];
   const recurringAuthors = [];
-  const tenures = [];
 
-  for (const user of users) {
-
+  for (const user of uniqueAuthors) {
+    await checkQuota(octokit);
     let found = false;
     let count = 0;
 
-    const { data: userConvs } = await octokit.issues.listForRepo({
+    const userIssuesAndPRs = (await octokit.issues.listForRepo({
       owner: repo.data.owner.login,
       repo: repo.data.name,
       state: "all",
@@ -30,56 +38,69 @@ async function findNewAuthors(repo, convType, since, users) {
       sort: "created",
       direction: "asc",
       per_page: 100,
-    });
+    })).data;
 
 
-    let indRes = null;
+    let earliestCreatedAtDate = null;
 
-    for (const conv of userConvs) {
-      const { data } = await octokit.issues.get({
-        owner: repo.data.owner.login,
-        repo: repo.data.name,
-        issue_number: conv.number,
-      });
-
-      if (count === 0) {
-        const tenure = dayjs().diff(dayjs(data.created_at), "month", true);
-        tenures.push(tenure);
-      }
-
-      if (convType === "issue" && !data.pull_request) {
-        found = true;
-      } else if (convType === "pr" && data.pull_request) {
-        found = true;
-      }
-
-      if (found) {
-        indRes = data;
-        break;
+    for (const issue of userIssuesAndPRs) {
+      let createdAt = new Date(issue.created_at);
+      if (!earliestCreatedAtDate || (earliestCreatedAtDate && createdAt < earliestCreatedAtDate)) {
+        earliestCreatedAtDate = createdAt;
       }
     }
 
-    if (indRes && dayjs(indRes.created_at).isAfter(dayjs(since))) {
-      newAuthors.push(user);
+    const tenure = dayjs(end).diff(dayjs(earliestCreatedAtDate), "month", true);
+
+    if (!(user.login in tenures)) {
+      tenures[user.login] = tenure;
+    }
+    // console.log("tenures -", tenures);
+    if (earliestCreatedAtDate < new Date(since)) {
+      recurringAuthors.push(user); // eventually change to just 'user' to make it a hyperlink
     } else {
-      recurringAuthors.push(user);
+      newAuthors.push(user);// eventually change to just 'user' to make it a hyperlink
     }
   }
 
-  const avgTenure = tenures.length > 0 ? tenures.reduce((a, b) => a + b) / tenures.length : 0;
-  return { newAuthors, avgTenure, recurringAuthors };
+  return { newAuthors, recurringAuthors };
 }
 
-export async function calculateMetrics(owner, repoName) {
+export async function calculateMetrics(owner, repoName, weeksAgo, daysAgo = null) {
 
   const repo = await getRepoObject(owner, repoName);
-  const window = 1; // this if from the past week (TODO: run this for window 1 and 2 so we can use emojis to mark trends)
 
 
-  const since = getTime(window);
-  const end = getTime(window - 1);
+  const since = getTime(weeksAgo, daysAgo ? daysAgo : 0);
+  const end = getTime(weeksAgo - 1, daysAgo ? daysAgo - 1 : 0);
+
 
   const res = {
+    "since": since,
+    "num_unique_authors": {
+      "issues": 0,
+      "pull_requests": 0
+    },
+    "unique_authors": {
+      "issues": [],
+      "pull_requests": []
+    },
+    "new_authors": { // also this is just the logins for now, eventually it will be a link
+      "issues": [], //btw, this is authors of issues who are new to ANY creation, git or pr
+      "pull_requests": []
+    },
+    "num_new_authors": {
+      "issues": 0,
+      "pull_requests": 0
+    },
+    "recur_authors": {
+      "issues": [],
+      "pull_requests": []
+    },
+    "num_recur_authors": {
+      "issues": 0,
+      "pull_requests": 0
+    },
     "num_closed": {
       "issues": 0,
       "pull_requests": 0
@@ -96,11 +117,11 @@ export async function calculateMetrics(owner, repoName) {
       "issues": 0,
       "pull_requests": 0
     },
-    "median_comments_recent": {
+    "median_comments_before_close": {
       "issues": 0,
       "pull_requests": 0
     },
-    "avg_comments_recent": {
+    "avg_comments_before_close": {
       "issues": 0,
       "pull_requests": 0
     },
@@ -108,30 +129,7 @@ export async function calculateMetrics(owner, repoName) {
       "issues": 0,
       "pull_requests": 0
     },
-    "num_unique_authors": {
-      "issues": 0,
-      "pull_requests": 0
-    },
-    "unique_authors": {
-      "issues": [],
-      "pull_requests": []
-    },
-    "new_authors": {
-      "issues": [],
-      "pull_requests": []
-    },
-    "num_new_authors": {
-      "issues": 0,
-      "pull_requests": 0
-    },
-    "recur_authors": {
-      "issues": [],
-      "pull_requests": []
-    },
-    "num_recur_authors": {
-      "issues": 0,
-      "pull_requests": 0
-    },
+
     "avg_recent_comments": {
       "issues": 0,
       "pull_requests": 0
@@ -141,111 +139,116 @@ export async function calculateMetrics(owner, repoName) {
       "pull_requests": 0
     },
     "new_label_counts": {},
-    "num_toxic": 0,
+    "num_toxic_convos": {
+      "issues": 0,
+      "pull_requests": 0
+    },
+    "num_toxic_comments": {
+      "issues": 0,
+      "pull_requests": 0
+    },
     "toxic_convos": {
       "issues": [],
       "pull_requests": []
     },
-    // "neg_senti":  {
-    //   "issues": [],
-    //   "pull_requests": []
+    "toxic_comments": {
+      "issues": [],
+      "pull_requests": []
+    },
+    "max_toxic": { // as of now, its max toxicity for RECENT comments
+      "issues": 0,
+      "pull_requests": 0
+    },
+    // "max_attack": {
+    //   "issues": 0,
+    //   "pull_requests": 0
     // },
-    "max_toxic": {
-      "issues": 0,
-      "pull_requests": 0
-    },
-    "max_attack": {
-      "issues": 0,
-      "pull_requests": 0
-    },
-    "avg_comments_before_close": {
-      "issues": 0,
-      "pull_requests": 0
-    },
+    "avg_tenure": 0 // in months
   };
 
-  const allIssues = getAllIssues(owner, repoName);
+  const allIssues = await getRecentIssues(owner, repoName, since);
 
-  const allPullRequests = getAllPullRequests(owner, repoName);
-
-  if (allIssues.length === 0 && allPullRequests.length === 0) {
-    return res
-  }
+  const allPullRequests = await getRecentPullRequests(owner, repoName, since);
 
   // num_closed
   const issuesClosedInCurrentWindow = allIssues.filter(issue => {
     const issueState = issue.state;
-    const closedAt = new Date(issue.closed_at);
-    return issueState === "closed" && closedAt >= since && closedAt < end
+    const closedAt = issue.closed_at;
+    return issueState === "closed" && closedAt >= since && closedAt < end;
   });
 
+
   const numIssuesClosed = issuesClosedInCurrentWindow.length;
+  res["num_closed"]["issues"] = numIssuesClosed;
 
   const pullRequestsClosedInCurrentWindow = allPullRequests.filter(issue => {
     const issueState = issue.state;
-    const closedAt = new Date(issue.closed_at);
-    return issueState === "closed" && closedAt >= since && closedAt < end
+    const closedAt = issue.closed_at;
+    return issueState === "closed" && closedAt >= since && closedAt < end;
   });
 
-  const numPullRequestsClosed = issuesClosedInCurrentWindow.length;
+  const numPullRequestsClosed = pullRequestsClosedInCurrentWindow.length;
+  // console.log("pr closed =", numPullRequestsClosed);
+  res["num_closed"]["pull_requests"] = numPullRequestsClosed;
 
 
   res.num_closed.issues = numIssuesClosed;
   res.num_closed.pull_requests = numPullRequestsClosed;
 
   // median_close_time, avg_close_time, median_comments_before_close, avg_comments_before_close
+  // const testIssue = issuesClosedInCurrentWindow[0];
+  // console.log("result =", (new Date(testIssue.closed_at)) - (new Date(testIssue.created_at)));
 
-  let medianIssueCloseTime = 0;
-  let avgIssueCloseTime = 0;
-  let medianIssueCommentsBeforeClose = 0;
-  let avgIssueCommentsBeforeClose = 0;
+  const issueCloseTimes = issuesClosedInCurrentWindow.map(item => (new Date(item.closed_at) - new Date(item.created_at)) / (1000 * 60 * 60 * 24));
+  const medianIssueCloseTime = numIssuesClosed != 0 ? median(issueCloseTimes) : 0;
+  res["median_close_time"]["issues"] = medianIssueCloseTime;
 
-  let medianPullRequestCloseTime = 0;
-  let avgPullRequestCloseTime = 0;
-  let medianPullRequestCommentsBeforeClose = 0;
-  let avgPullRequestCommentsBeforeClose = 0;
+  const avgIssueCloseTime = numIssuesClosed != 0 ? average(issueCloseTimes) : 0;
+  res["avg_close_time"]["issues"] = avgIssueCloseTime;
 
-  if (numIssuesClosed > 0) {
-    // Assuming curWinClosed is an array of objects with a `close_len` property
-    const closeTimes = issuesClosedInCurrentWindow.map(item => item.close_len);
-    medianIssueCloseTime = median(closeTimes);
-    avgIssueCloseTime = average(closeTimes);
+  const issueCommentsBeforeCloses = issuesClosedInCurrentWindow.map(item => item.comments);
+  const medianIssueCommentsBeforeClose = numIssuesClosed != 0 ? median(issueCommentsBeforeCloses) : 0;
+  res["median_comments_before_close"]["issues"] = medianIssueCommentsBeforeClose;
 
-    const issueCommentsBeforeCloses = issuesClosedInCurrentWindow.map(item => item.num_comments);
-    medianIssueCommentsBeforeClose = median(issueCommentsBeforeCloses);
-    avgIssueCommentsBeforeClose = average(issueCommentsBeforeCloses);
-  }
+  const avgIssueCommentsBeforeClose = numIssuesClosed != 0 ? average(issueCommentsBeforeCloses) : 0;
+  res["avg_comments_before_close"]["issues"] = avgIssueCommentsBeforeClose;
 
-  if (numPullRequestsClosed > 0) {
-    const closeTimes = pullRequestsClosedInCurrentWindow.map(item => item.close_len);
-    medianIssueCloseTime = median(closeTimes);
-    avgIssueCloseTime = average(closeTimes);
+  const pullRequestCloseTimes = pullRequestsClosedInCurrentWindow.map(item => (new Date(item.closed_at) - new Date(item.created_at)) / (1000 * 60 * 60 * 24));
+  const medianPullRequestCloseTime = numPullRequestsClosed != 0 ? median(pullRequestCloseTimes) : 0;
+  res["median_close_time"]["pull_requests"] = medianPullRequestCloseTime;
 
-    const pullRequestCommentsBeforeCloses = pullRequestsClosedInCurrentWindow.map(item => item.num_comments);
-    medianIssueCommentsBeforeClose = median(pullRequestCommentsBeforeCloses);
-    avgIssueCommentsBeforeClose = average(pullRequestCommentsBeforeCloses);
-  }
+  const avgPullRequestCloseTime = numPullRequestsClosed != 0 ? average(pullRequestCloseTimes) : 0;
+  res["avg_close_time"]["pull_requests"] = avgPullRequestCloseTime;
+
+  const pullRequestCommentsBeforeCloses = pullRequestsClosedInCurrentWindow.map(item => item.comments);
+  const medianPullRequestCommentsBeforeClose = numPullRequestsClosed != 0 ? median(pullRequestCommentsBeforeCloses) : 0;
+  res["median_comments_before_close"]["pull_requests"] = medianPullRequestCommentsBeforeClose;
+  const avgPullRequestCommentsBeforeClose = numPullRequestsClosed != 0 ? average(pullRequestCommentsBeforeCloses) : 0;
+  res["avg_comments_before_close"]["pull_requests"] = avgPullRequestCommentsBeforeClose;
+
 
   // num_closed_0_comments
   const numClosedIssuesWith0Comments = issuesClosedInCurrentWindow.filter(issue => {
-    const numComments = issue.num_comments;
+    const numComments = issue.comments;
     return numComments === 0;
   }).length;
+  res["num_closed_0_comments"]["issues"] = numClosedIssuesWith0Comments;
 
   const numClosedPullRequestsWith0Comments = pullRequestsClosedInCurrentWindow.filter(pr => {
-    const numComments = pr.num_comments;
+    const numComments = pr.comments;
     return numComments === 0;
   }).length;
-
+  res["num_closed_0_comments"]["pull_requests"] = numClosedPullRequestsWith0Comments;
 
   // num_opened
 
   const issuesOpenedInCurrentWindow = allIssues.filter(issue => {
-    const createdAt = issue.created_at
+    const createdAt = issue.created_at;
     return createdAt >= since && createdAt < end;
   });
 
   const numIssuesOpened = issuesOpenedInCurrentWindow.length;
+  res["num_opened"]["issues"] = numIssuesOpened;
 
   const pullRequestsOpenedInCurrentWindow = allPullRequests.filter(pr => {
     const createdAt = pr.created_at
@@ -253,27 +256,25 @@ export async function calculateMetrics(owner, repoName) {
   });
 
   const numPullRequestsOpened = pullRequestsOpenedInCurrentWindow.length;
+  res["num_opened"]["pull_requests"] = numPullRequestsOpened;
 
 
   // median_recent_comments (on issues and prs)
 
-  let medianRecentIssueComments = 0;
-  let avgRecentIssueComments = 0;
 
-  if (numIssuesOpened > 0) {
-    const numComments = issuesOpenedInCurrentWindow.map(item => item.num_comments);
-    medianRecentIssueComments = median(numComments);
-    avgRecentIssueComments = average(numComments);
-  }
+  const numIssueComments = issuesOpenedInCurrentWindow.map(item => item.comments);
+  const medianRecentIssueComments = numIssuesOpened != 0 ? median(numIssueComments) : 0;
+  res["median_recent_comments"]["issues"] = medianRecentIssueComments;
+  const avgRecentIssueComments = numIssuesOpened != 0 ? average(numIssueComments) : 0;
+  res["avg_recent_comments"]["issues"] = avgRecentIssueComments;
 
-  let medianRecentPullRequestComments = 0;
-  let avgRecentPullRequestComments = 0;
+  const numPullRequestComments = pullRequestsOpenedInCurrentWindow.map(item => item.comments);
+  const medianRecentPullRequestComments = numPullRequestsOpened != 0 ? median(numPullRequestComments) : 0;
+  res["median_recent_comments"]["pull_requests"] = medianRecentPullRequestComments;
+  const avgRecentPullRequestComments = numPullRequestsOpened != 0 ? average(numPullRequestComments) : 0;
+  res["avg_recent_comments"]["pull_requests"] = avgRecentPullRequestComments;
 
-  if (numPullRequestsOpened > 0) {
-    const numComments = pullRequestsOpenedInCurrentWindow.map(item => item.num_comments);
-    medianRecentPullRequestComments = median(numComments);
-    avgRecentPullRequestComments = average(numComments);
-  }
+
 
   //unique_authors
   const bots = await getBots();
@@ -282,72 +283,72 @@ export async function calculateMetrics(owner, repoName) {
   const nonBotIssueAuthors = issueAuthors.filter(author => { return !bots.includes(author) });
   const uniqueIssueAuthors = [...new Set(nonBotIssueAuthors)];
   const uniqueIssueAuthorLogins = uniqueIssueAuthors.map(author => author.login);
+  res["unique_authors"]["issues"] = uniqueIssueAuthorLogins;
 
   const pullRequestAuthors = pullRequestsOpenedInCurrentWindow.map(pr => pr.user);
   const nonBotPullRequestAuthors = pullRequestAuthors.filter(author => { return !bots.includes(author) });
   const uniquePullRequestAuthors = [...new Set(nonBotPullRequestAuthors)];
   const uniquePullRequestAuthorLogins = uniquePullRequestAuthors.map(author => author.login);
-
-
+  res["unique_authors"]["pull_requests"] = uniquePullRequestAuthorLogins;
 
   //num_unique_authors
   const numUniqueIssueAuthors = uniqueIssueAuthorLogins.length;
+  res["num_unique_authors"]["issues"] = numUniqueIssueAuthors;
   const numUniquePullRequestAuthors = uniquePullRequestAuthorLogins.length;
+  res["num_unique_authors"]["pull_requests"] = numUniquePullRequestAuthors;
 
-
+  let tenures = {};
   //new_authors, recurring authors
-  const { newIssueAuthors, avgIssueAuthorTenure, recurringIssueAuthors } = await findNewAuthors(repo, convType, since, uniqueAuthors); // new authors did not contribute before this window
+  const { newAuthors: newIssueAuthors, recurringAuthors: recurringIssueAuthors } = await getAuthorStats(repo, since, end, uniqueIssueAuthors, tenures); // new authors did not contribute before this window
+  const { newAuthors: newPullRequestAuthors, recurringAuthors: recurringPullRequestAuthors } = await getAuthorStats(repo, since, end, uniquePullRequestAuthors, tenures); // new authors did not contribute before this window
 
+  const avgTenure = await getAvgTenure(tenures);
 
-  //
+  res["avg_tenure"] = avgTenure;
+
+  // num_new_authors
   const numNewIssueAuthors = newIssueAuthors.length;
+  const numNewPullRequestAuthors = newPullRequestAuthors.length;
 
-  //
+  res["num_new_authors"]["issues"] = numNewIssueAuthors;
+  res["num_new_authors"]["pull_requests"] = numNewPullRequestAuthors;
+
+  // new_authors
   const newIssueAuthorLogins = newIssueAuthors.map(author => author.login);
+  const newPullRequestAuthorLogins = newPullRequestAuthors.map(author => author.login);
 
+  res["new_authors"]["issues"] = newIssueAuthorLogins;
+  res["new_authors"]["pull_requests"] = newPullRequestAuthorLogins;;
+
+
+  // recurring_authors
   const numRecurringIssueAuthors = recurringIssueAuthors.length;
+  const numRecurringPullRequestAuthors = recurringPullRequestAuthors.length;
+
+  res["num_recur_authors"]["issues"] = numRecurringIssueAuthors;
+  res["num_recur_authors"]["pull_requests"] = numRecurringPullRequestAuthors;
+
   const recurringIssueAuthorLogins = recurringIssueAuthors.map(author => author.login);
+  const recurringPullRequestAuthorLogins = recurringPullRequestAuthors.map(author => author.login);
+
+  res["recur_authors"]["issues"] = recurringIssueAuthorLogins;
+  res["recur_authors"]["pull_requests"] = recurringPullRequestAuthorLogins;
 
 
-  // const commentsInCurrentWindow = comments.filter(comment => {
-  //   const createdAt = comment.created_at;
-  //   return createdAt >= since && createdAt < end;
-  // });
+  // toxic_convos, toxic_comments, max_toxic
+  const { toxicConvos: toxicIssueConvos, toxicComments: toxicIssueComments, maxToxicity: maxIssueCommentToxicity } = await findToxicity(repo, allIssues, since, end);
+  const { toxicConvos: toxicPullRequestConvos, toxicComments: toxicPullRequestComments, maxToxicity: maxPullRequestCommentToxicity } = await findToxicity(repo, allPullRequests, since, end);
+  res["toxic_convos"]["issues"] = toxicIssueConvos;
+  res["toxic_convos"]["pull_requests"] = toxicPullRequestConvos;
 
-  // ok should this use all of the comments though? or am i tripping
-  // console.log("comment 0 just so i can see", comments[0]);
-  // get the comments that were made since "since and before end"
-  // with those comments, find the conversations that they're associated to
+  res["toxic_comments"]["issues"] = toxicIssueComments;
+  res["toxic_comments"]["pull_requests"] = toxicPullRequestComments;
 
+  res["max_toxic"]["issues"] = maxIssueCommentToxicity;
+  res["max_toxic"]["pull_requests"] = maxPullRequestCommentToxicity;
 
-  // active discussions = discussions with at least one comment the past week
-  // const toxicIssueConvosInCurrentWindow = findToxicity(repo, commentsInCurrentWindow, allDiscussions, since, end);
+  console.log("toxic convo num", toxicIssueConvos ? toxicIssueConvos.length : 0);
 
-  // const numToxicIssueConvos = toxicConvosInCurrentWindow.toxic.length;
-
-  // res = {
-  //   "num_closed": numClosed,
-  //   "num_closed_0_comments": numClosed0Comments,
-  //   "median_close_time": medianCloseTime,
-  //   "avg_close_time": avgCloseTime,
-  //   "num_opened": numOpened,
-  //   "num_unique_authors": numUniqueAuthors,
-  //   "unique_authors": uniqueAuthorLogins,
-  //   "new_authors": newAuthorLogins,
-  //   "num_new_authors": numNewAuthors,
-  //   "recur_authors": recurringAuthorLogins,
-  //   "num_recur_authors": numRecurringAuthors,
-  //   "avg_tenure": avgTenure,
-  //   "median_comments_before_close": medianCommentsBeforeClose,
-  //   "avg_comments_before_close": avgCommentsBeforeClose,
-  //   "median_comments_recent": round(median_comments_recent, 1),
-  //   "avg_comments_recent": round(avg_comments_recent, 1),
-  //   "num_toxic": numToxicConvos,
-  //   "toxic": copy.deepcopy(toxic_convs["toxic"]),
-  //   // "neg_senti": copy.deepcopy(toxic_convs["neg_senti"]),
-  //   "max_toxic": round(toxic_convs["max_toxic"], 3),
-  //   "max_attack": round(toxic_convs["max_attack"], 3)
-  // }
   return res;
 
 
