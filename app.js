@@ -128,6 +128,15 @@ async function setupGuild(guild) {
   if (!channel) {
     const owner = await guild.fetchOwner();
     const ownerId = owner.user.id;
+    try {
+      onboardingState.delete(channel.guild.id);
+      welcomeMessageIds.delete(channel.guild.id);
+      selectRepoMessageIds.delete(channel.guild.id);
+      stateGuildMap.delete(channel.guild.id);
+      saveStateToFile();
+    } catch (err) {
+      console.error(`Error re-setting up guild after channel deletion:`, err);
+    }
     console.log("ownerId! ", ownerId);
     try {
       channel = await guild.channels.create({
@@ -263,7 +272,7 @@ async function sendAllRepoData() {
       console.log(`Channel ${CHANNEL_NAME} not found in guild ${guild.name}. Skipping...`);
       return;
     }
-    const reportMessages = generateReportMessage(guildId);
+    const reportMessages = generateReportMessage(guildId, channel);
     function sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
@@ -428,7 +437,7 @@ client.on("interactionCreate", async (interaction) => {
         );
       }
       await interaction.reply("Generating report...");
-      const reportMessages = generateReportMessage(interaction.guild.id);
+      const reportMessages = generateReportMessage(interaction.guild.id, interaction.channel);
 
       for (const reportMessage of reportMessages) {
         await interaction.channel.send({
@@ -470,12 +479,7 @@ client.on("interactionCreate", async (interaction) => {
     } else if (interaction.commandName === "disconnect") {
       const guildId = interaction.guild.id;
       // Clear all stored data for the guild
-      guildRepoData.delete(guildId);
-      onboardingState.delete(guildId);
-      welcomeMessageIds.delete(guildId);
-      selectRepoMessageIds.delete(guildId);
-      stateGuildMap.delete(guildId);
-      saveStateToFile();
+
       // Unpin and delete all pinned messages in the channel
       const channel = interaction.channel;
       if (channel && channel.isTextBased()) {
@@ -613,6 +617,12 @@ client.on("interactionCreate", async (interaction) => {
 
 client.on("guildCreate", async (guild) => {
   console.log(`📥 Joined new guild: ${guild.name}`);
+  guildRepoData.delete(guild.id);
+  onboardingState.delete(guild.id);
+  welcomeMessageIds.delete(guild.id);
+  selectRepoMessageIds.delete(guild.id);
+  stateGuildMap.delete(guild.id);
+  saveStateToFile();
   await setupGuild(guild);
 });
 

@@ -33,10 +33,10 @@ function isRelevantTrend(trend) {
   if (!trend) {
     return false;
   }
-  return Math.abs(Math.abs(trend) - 1) >= 1000;
+  return Math.abs(Math.abs(trend) - 1) >= 0.2;
 }
 
-export function generateReportMessage(guildId) {
+export function generateReportMessage(guildId, channel) {
   // const lastMetrics = guildLastMetrics.get(guildId);
   // const currentMetrics = guildCurrentMetrics.get(guildId);
   const { lastMetrics, currentMetrics } = loadResultsFromFile(guildId);
@@ -508,9 +508,17 @@ export function generateReportMessage(guildId) {
     return section;
   }
 
+  const twentyFourHours = 24 * 60 * 60 * 1000;
+  const shouldShowButton = Date.now() - lastMetrics["end"] < twentyFourHours;
+
   const sections = [
     { content: "================================" },
-    { content: reportTitle },
+    {
+      content: reportTitle,
+      components: shouldShowButton
+        ? [new ActionRowBuilder().addComponents(new ButtonBuilder().addLabel("Open Report"))]
+        : null,
+    },
     { content: "================================" },
     ...communitySection(),
     { content: "--------------------------------" },
