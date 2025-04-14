@@ -78,7 +78,7 @@ export async function calculateMetrics(owner, repoName, period, ago) {
   const since = getTime(period == "week" ? ago + 1 : 0, period == "day" ? ago + 1 : 0);
   const end = getTime(period == "week" ? ago : 0, period == "day" ? ago : 0);
 
-  console.log("starting metrics calculation for ", repoName);
+  console.log("Starting metrics calculation for", owner, "/", repoName);
 
   const res = {
     since: since,
@@ -215,7 +215,8 @@ export async function calculateMetrics(owner, repoName, period, ago) {
   res["avg_close_time"]["issues"] = avgIssueCloseTime;
 
   const issueCommentsBeforeCloses = issuesClosedInCurrentWindow.map((item) => item.comments);
-  const medianIssueCommentsBeforeClose = numIssuesClosed != 0 ? median(issueCommentsBeforeCloses) : 0;
+  const medianIssueCommentsBeforeClose =
+    numIssuesClosed != 0 ? median(issueCommentsBeforeCloses) : 0;
   res["median_comments_before_close"]["issues"] = medianIssueCommentsBeforeClose;
 
   const avgIssueCommentsBeforeClose = numIssuesClosed != 0 ? average(issueCommentsBeforeCloses) : 0;
@@ -230,10 +231,14 @@ export async function calculateMetrics(owner, repoName, period, ago) {
   const avgPullRequestCloseTime = numPullRequestsClosed != 0 ? average(pullRequestCloseTimes) : 0;
   res["avg_close_time"]["pull_requests"] = avgPullRequestCloseTime;
 
-  const pullRequestCommentsBeforeCloses = pullRequestsClosedInCurrentWindow.map((item) => item.comments);
-  const medianPullRequestCommentsBeforeClose = numPullRequestsClosed != 0 ? median(pullRequestCommentsBeforeCloses) : 0;
+  const pullRequestCommentsBeforeCloses = pullRequestsClosedInCurrentWindow.map(
+    (item) => item.comments
+  );
+  const medianPullRequestCommentsBeforeClose =
+    numPullRequestsClosed != 0 ? median(pullRequestCommentsBeforeCloses) : 0;
   res["median_comments_before_close"]["pull_requests"] = medianPullRequestCommentsBeforeClose;
-  const avgPullRequestCommentsBeforeClose = numPullRequestsClosed != 0 ? average(pullRequestCommentsBeforeCloses) : 0;
+  const avgPullRequestCommentsBeforeClose =
+    numPullRequestsClosed != 0 ? average(pullRequestCommentsBeforeCloses) : 0;
   res["avg_comments_before_close"]["pull_requests"] = avgPullRequestCommentsBeforeClose;
 
   // num_closed_0_comments
@@ -276,9 +281,11 @@ export async function calculateMetrics(owner, repoName, period, ago) {
   res["avg_recent_comments"]["issues"] = avgRecentIssueComments;
 
   const numPullRequestComments = pullRequestsOpenedInCurrentWindow.map((item) => item.comments);
-  const medianRecentPullRequestComments = numPullRequestsOpened != 0 ? median(numPullRequestComments) : 0;
+  const medianRecentPullRequestComments =
+    numPullRequestsOpened != 0 ? median(numPullRequestComments) : 0;
   res["median_recent_comments"]["pull_requests"] = medianRecentPullRequestComments;
-  const avgRecentPullRequestComments = numPullRequestsOpened != 0 ? average(numPullRequestComments) : 0;
+  const avgRecentPullRequestComments =
+    numPullRequestsOpened != 0 ? average(numPullRequestComments) : 0;
   res["avg_recent_comments"]["pull_requests"] = avgRecentPullRequestComments;
 
   //unique_authors
@@ -288,7 +295,9 @@ export async function calculateMetrics(owner, repoName, period, ago) {
   const nonBotIssueAuthors = issueAuthors.filter((author) => {
     return !bots.includes(author);
   });
-  const uniqueIssueAuthors = [...new Set(nonBotIssueAuthors)];
+  const uniqueIssueAuthors = [
+    ...new Map(nonBotIssueAuthors.map((author) => [author.login, author])).values(),
+  ];
   const uniqueIssueAuthorLogins = uniqueIssueAuthors.map((author) => author.login);
   res["unique_authors"]["issues"] = uniqueIssueAuthors;
 
@@ -296,7 +305,10 @@ export async function calculateMetrics(owner, repoName, period, ago) {
   const nonBotPullRequestAuthors = pullRequestAuthors.filter((author) => {
     return !bots.includes(author);
   });
-  const uniquePullRequestAuthors = [...new Set(nonBotPullRequestAuthors)];
+  const uniquePullRequestAuthors = [
+    ...new Map(nonBotPullRequestAuthors.map((author) => [author.login, author])).values(),
+  ];
+
   const uniquePullRequestAuthorLogins = uniquePullRequestAuthors.map((author) => author.login);
   res["unique_authors"]["pull_requests"] = uniquePullRequestAuthors;
 
@@ -308,45 +320,29 @@ export async function calculateMetrics(owner, repoName, period, ago) {
 
   let tenures = {};
   //new_authors, recurring authors
-  const { newAuthors: newIssueAuthors, recurringAuthors: recurringIssueAuthors } = await getAuthorStats(
-    repo,
-    since,
-    end,
-    uniqueIssueAuthors,
-    tenures
-  ); // new authors did not contribute before this window
-  const { newAuthors: newPullRequestAuthors, recurringAuthors: recurringPullRequestAuthors } = await getAuthorStats(
-    repo,
-    since,
-    end,
-    uniquePullRequestAuthors,
-    tenures
-  ); // new authors did not contribute before this window
+  const { newAuthors: newIssueAuthors, recurringAuthors: recurringIssueAuthors } =
+    await getAuthorStats(repo, since, end, uniqueIssueAuthors, tenures); // new authors did not contribute before this window
+  const { newAuthors: newPullRequestAuthors, recurringAuthors: recurringPullRequestAuthors } =
+    await getAuthorStats(repo, since, end, uniquePullRequestAuthors, tenures); // new authors did not contribute before this window
 
   const avgTenure = await getAvgTenure(tenures);
 
   res["avg_tenure"] = avgTenure;
 
   // num_new_authors
-  const numNewIssueAuthors = newIssueAuthors.length;
-  const numNewPullRequestAuthors = newPullRequestAuthors.length;
-
-  res["num_new_authors"]["issues"] = numNewIssueAuthors;
-  res["num_new_authors"]["pull_requests"] = numNewPullRequestAuthors;
+  res["num_new_authors"]["issues"] = newIssueAuthors.length;
+  res["num_new_authors"]["pull_requests"] = newPullRequestAuthors.length;
 
   // new_authors
   res["new_authors"]["issues"] = newIssueAuthors;
   res["new_authors"]["pull_requests"] = newPullRequestAuthors;
 
   // recurring_authors
-  res["num_recur_authors"]["issues"] = recurringIssueAuthors;
-  res["num_recur_authors"]["pull_requests"] = recurringPullRequestAuthors;
+  res["num_recur_authors"]["issues"] = recurringIssueAuthors.length;
+  res["num_recur_authors"]["pull_requests"] = recurringPullRequestAuthors.length;
 
-  const recurringIssueAuthorLogins = recurringIssueAuthors.map((author) => author.login);
-  const recurringPullRequestAuthorLogins = recurringPullRequestAuthors.map((author) => author.login);
-
-  res["recur_authors"]["issues"] = recurringIssueAuthorLogins;
-  res["recur_authors"]["pull_requests"] = recurringPullRequestAuthorLogins;
+  res["recur_authors"]["issues"] = recurringIssueAuthors;
+  res["recur_authors"]["pull_requests"] = recurringPullRequestAuthors;
 
   const allIssueComments = await getRecentIssueComments(owner, repoName, since);
 
@@ -362,16 +358,16 @@ export async function calculateMetrics(owner, repoName, period, ago) {
     maxToxicity: maxIssueCommentToxicity,
   } = await findToxicity(repo, filteredIssueComments, since, end);
 
-  console.log("toxicISsueConvos", toxicIssueConvos.length);
+  // console.log("toxicISsueConvos", toxicIssueConvos.length);
   res["toxic_convos"]["issues"] = toxicIssueConvos;
 
   const allPullRequestComments = await getRecentPRComments(owner, repoName, since);
-  console.log("recent pr comments", allPullRequestComments.length);
+  // console.log("recent pr comments", allPullRequestComments.length);
   const filteredPullRequestComments = allPullRequestComments.filter((comment) => {
     const createdAt = comment.created_at;
     return createdAt >= since && createdAt < end;
   });
-  console.log("filtered pr comments", filteredPullRequestComments.length);
+  // console.log("filtered pr comments", filteredPullRequestComments.length);
   const {
     toxicConvos: toxicPullRequestConvos,
     toxicComments: toxicPullRequestComments,

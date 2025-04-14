@@ -19,11 +19,7 @@ export function getMetricTrends(lastMetrics, currentMetrics) {
     console.error("No metrics found");
     return null;
   }
-  console.log(
-    "what i wanted to see",
-    lastMetrics["num_new_authors"]["issues"],
-    currentMetrics["num_new_authors"]["issues"]
-  );
+
   const res = {
     // Community
     delta_num_unique_authors: {

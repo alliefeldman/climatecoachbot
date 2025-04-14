@@ -33,7 +33,7 @@ function isRelevantTrend(trend) {
   if (!trend) {
     return false;
   }
-  return Math.abs(Math.abs(trend) - 1) >= 0.2;
+  return Math.abs(Math.abs(trend) - 1) >= 1000;
 }
 
 export function generateReportMessage(guildId) {
@@ -41,11 +41,10 @@ export function generateReportMessage(guildId) {
   // const currentMetrics = guildCurrentMetrics.get(guildId);
   const { lastMetrics, currentMetrics } = loadResultsFromFile(guildId);
   const metricTrends = getMetricTrends(lastMetrics, currentMetrics);
-  console.log("huh...");
 
-  const reportTitle = `# Community Health Update (${formatDate(currentMetrics.since)} - ${formatDate(
-    currentMetrics.end
-  )})`;
+  const reportTitle = `# Community Health Update (${formatDate(
+    currentMetrics.since
+  )} - ${formatDate(currentMetrics.end)})`;
 
   const communityTrends = {
     "num_unique_authors-issues": metricTrends["delta_num_unique_authors"]["issues"],
@@ -61,15 +60,19 @@ export function generateReportMessage(guildId) {
     "num_closed-issues:": metricTrends["delta_num_closed"]["issues"],
     "num_closed-pull_requests": metricTrends["delta_num_closed"]["pull_requests"],
     "num_closed_0_comments-issues": metricTrends["delta_num_closed_0_comments"]["issues"],
-    "num_closed_0_comments-pull_requests": metricTrends["delta_num_closed_0_comments"]["pull_requests"],
+    "num_closed_0_comments-pull_requests":
+      metricTrends["delta_num_closed_0_comments"]["pull_requests"],
     "avg_close_time-issues": metricTrends["delta_avg_close_time"]["issues"],
     "avg_close_time-pull_requests": metricTrends["delta_avg_close_time"]["pull_requests"],
     "median_close_time-issues": metricTrends["delta_median_close_time"]["issues"],
     "median_close_time-pull_requests": metricTrends["delta_median_close_time"]["pull_requests"],
-    "median_comments_before_close-issues": metricTrends["delta_median_comments_before_close"]["issues"],
-    "median_comments_before_close-pull_requests": metricTrends["delta_median_comments_before_close"]["pull_requests"],
+    "median_comments_before_close-issues":
+      metricTrends["delta_median_comments_before_close"]["issues"],
+    "median_comments_before_close-pull_requests":
+      metricTrends["delta_median_comments_before_close"]["pull_requests"],
     "avg_comments_before_close-issues": metricTrends["delta_avg_comments_before_close"]["issues"],
-    "avg_comments_before_close-pull_requests": metricTrends["delta_avg_comments_before_close"]["pull_requests"],
+    "avg_comments_before_close-pull_requests":
+      metricTrends["delta_avg_comments_before_close"]["pull_requests"],
   };
 
   const modal = new ModalBuilder().setCustomId("info_modal").setTitle("Details");
@@ -108,7 +111,8 @@ export function generateReportMessage(guildId) {
           ? `\n- \`New: ${issueNewCount}\` ` + addTrailingEmojis(issueNewTrend, "num_new_authors")
           : "") +
         (isRelevantTrend(issueRecurTrend)
-          ? `\n- \`Returning: ${issueRecurCount}\` ` + addTrailingEmojis(issueRecurTrend, "num_recur_authors")
+          ? `\n- \`Returning: ${issueRecurCount}\` ` +
+            addTrailingEmojis(issueRecurTrend, "num_recur_authors")
           : ""),
       components: [
         (() => {
@@ -135,7 +139,8 @@ export function generateReportMessage(guildId) {
         `### Total \`PULL REQUEST\` contributors: \`${pullRequestCount}\`` +
         addTrailingEmojis(pullRequestTrend, "num_unique_authors") +
         (isRelevantTrend(pullRequestNewTrend)
-          ? `\n- \`New: ${pullRequestNewCount}\` ` + addTrailingEmojis(pullRequestNewTrend, "num_new_authors")
+          ? `\n- \`New: ${pullRequestNewCount}\` ` +
+            addTrailingEmojis(pullRequestNewTrend, "num_new_authors")
           : "") +
         (isRelevantTrend(pullRequestRecurTrend)
           ? `\n- \`Returning: ${pullRequestRecurCount}\` ` +
@@ -151,7 +156,9 @@ export function generateReportMessage(guildId) {
             possibleButtons.addComponents(seeEmbedButton("new_contributors", "pull_requests"));
           }
           if (pullRequestRecurCount > 0) {
-            possibleButtons.addComponents(seeEmbedButton("returning_contributors", "pull_requests"));
+            possibleButtons.addComponents(
+              seeEmbedButton("returning_contributors", "pull_requests")
+            );
           }
           return possibleButtons;
         })(),
@@ -193,7 +200,10 @@ export function generateReportMessage(guildId) {
     const medCommPRTrend = closeActivityMetricTrends["median_comments_before_close-pull_requests"];
     const closeActivityTitle = { content: "## Close Activity" };
     const numClosedIssues = {
-      content: `### \`ISSUES\` closed: \`${issueCount}\` ${addTrailingEmojis(issueTrend, "num_closed")}`,
+      content: `### \`ISSUES\` closed: \`${issueCount}\` ${addTrailingEmojis(
+        issueTrend,
+        "num_closed"
+      )}`,
       component: [() => {}],
     };
 
@@ -201,14 +211,20 @@ export function generateReportMessage(guildId) {
       content: `- *Close time (days)*:\n  - \`Average: ${avgCloseTimeIssue}\` ${addTrailingEmojis(
         avgCloseTimeIssueTrend,
         "avg_close_time"
-      )}\n  - \`Median: ${medCloseTimeIssue}\` ${addTrailingEmojis(medCloseTimeIssueTrend, "median_close_time")}`,
+      )}\n  - \`Median: ${medCloseTimeIssue}\` ${addTrailingEmojis(
+        medCloseTimeIssueTrend,
+        "median_close_time"
+      )}`,
     };
 
     const issueNumComments = {
       content: `- *Number of comments* before close:\n  - \`Average: ${avgCommIssue}\` ${addTrailingEmojis(
         avgCommIssueTrend,
         "avg_comments_before_close"
-      )}\n  - \`Median: ${medCommIssue}\` ${addTrailingEmojis(medCommIssueTrend, "median_comments_before_close")}`,
+      )}\n  - \`Median: ${medCommIssue}\` ${addTrailingEmojis(
+        medCommIssueTrend,
+        "median_comments_before_close"
+      )}`,
     };
 
     const issue0Comments = {
@@ -240,14 +256,20 @@ export function generateReportMessage(guildId) {
       content: `- *Close time (days)*:\n  - \`Average: ${avgCloseTimePR}\` ${addTrailingEmojis(
         avgCloseTimePRTrend,
         "avg_close_time"
-      )}\n  - \`Median: ${medCloseTimePullRequest}\` ${addTrailingEmojis(medClosePRTrend, "median_close_time")}`,
+      )}\n  - \`Median: ${medCloseTimePullRequest}\` ${addTrailingEmojis(
+        medClosePRTrend,
+        "median_close_time"
+      )}`,
     };
 
     const pullRequestNumComments = {
       content: `- *Number of comments* before close:\n  - \`Average: ${avgCommPR}\` ${addTrailingEmojis(
         avgCommPRTrend,
         "avg_comments_before_close"
-      )}\n  - \`Median: ${medCommPR}\` ${addTrailingEmojis(medCommPRTrend, "median_comments_before_close")}`,
+      )}\n  - \`Median: ${medCommPR}\` ${addTrailingEmojis(
+        medCommPRTrend,
+        "median_comments_before_close"
+      )}`,
     };
 
     const pullRequest0Comments = {
@@ -261,7 +283,9 @@ export function generateReportMessage(guildId) {
       components: [
         (() => {
           const possibleButtons = new ActionRowBuilder();
-          possibleButtons.addComponents(seeEmbedButton("closed_pull_request_stats", "pull_requests"));
+          possibleButtons.addComponents(
+            seeEmbedButton("closed_pull_request_stats", "pull_requests")
+          );
           return possibleButtons;
         })(),
       ],
@@ -307,7 +331,8 @@ export function generateReportMessage(guildId) {
     "avg_recent_comments-issues": metricTrends["delta_avg_recent_comments"]["issues"],
     "avg_recent_comments-pull_requests": metricTrends["delta_avg_recent_comments"]["pull_requests"],
     "median_recent_comments-issues": metricTrends["delta_median_recent_comments"]["issues"],
-    "median_recent_comments-pull_requests": metricTrends["delta_median_recent_comments"]["pull_requests"],
+    "median_recent_comments-pull_requests":
+      metricTrends["delta_median_recent_comments"]["pull_requests"],
   };
 
   function openActivitySection() {
@@ -327,19 +352,19 @@ export function generateReportMessage(guildId) {
     const openActivityTitle = { content: "## Open Activity" };
 
     const numOpenedIssues = {
-      content:
-        "### `" +
-        issueCount +
-        "` ISSUE" +
-        (issueCount != 1 ? "S were" : " was") +
-        " opened " +
-        addTrailingEmojis(issueTrend, "num_opened"),
+      content: `### \`ISSUES\` opened: \`${issueCount}\` ${addTrailingEmojis(
+        issueTrend,
+        "num_opened"
+      )}`,
     };
     const issueNumComments = {
       content: `- *Number of Comments*:\n  - \`Average: ${avgCommIssue}\` ${addTrailingEmojis(
         avgCommIssueTrend,
         "avg_recent_comments"
-      )}\n  - \`Median: ${medCommIssue}\` ${addTrailingEmojis(medCommIssueTrend, "median_recent_comments")}`,
+      )}\n  - \`Median: ${medCommIssue}\` ${addTrailingEmojis(
+        medCommIssueTrend,
+        "median_recent_comments"
+      )}`,
     };
     const issueButtons = {
       content: "",
@@ -352,26 +377,28 @@ export function generateReportMessage(guildId) {
       ],
     };
     const numOpenedPullRequests = {
-      content:
-        "### `" +
-        pullRequestCount +
-        "` PULL REQUEST" +
-        (pullRequestCount != 1 ? "S were" : " was") +
-        " opened " +
-        addTrailingEmojis(pullRequestTrend, "num_opened"),
+      content: `### \`PULL REQUESTS\` opened: \`${pullRequestCount}\` ${addTrailingEmojis(
+        pullRequestTrend,
+        "num_opened"
+      )}`,
     };
     const pullRequestNumComments = {
       content: `- *Number of Comments*:\n  - \`Average: ${avgCommPR}\` ${addTrailingEmojis(
         avgCommPRTrend,
         "avg_recent_comments"
-      )}\n  - \`Median: ${medCommPR}\` ${addTrailingEmojis(medCommPRTrend, "median_recent_comments")}`,
+      )}\n  - \`Median: ${medCommPR}\` ${addTrailingEmojis(
+        medCommPRTrend,
+        "median_recent_comments"
+      )}`,
     };
     const pullRequestButtons = {
       content: "",
       components: [
         (() => {
           const possibleButtons = new ActionRowBuilder();
-          possibleButtons.addComponents(seeEmbedButton("opened_pull_request_stats", "pull_requests"));
+          possibleButtons.addComponents(
+            seeEmbedButton("opened_pull_request_stats", "pull_requests")
+          );
           return possibleButtons;
         })(),
       ],
@@ -449,7 +476,9 @@ export function generateReportMessage(guildId) {
             possibleButtons.addComponents(seeEmbedButton("toxic_issue_convos", "issues"));
           }
           if (pullRequestCount > 0) {
-            possibleButtons.addComponents(seeEmbedButton("toxic_pull_request_convos", "pull_requests"));
+            possibleButtons.addComponents(
+              seeEmbedButton("toxic_pull_request_convos", "pull_requests")
+            );
           }
 
           return possibleButtons;
@@ -501,7 +530,6 @@ client.on("interactionCreate", async (interaction) => {
 
   const [action, content, discType] = interaction.customId.split(":");
   const guildId = interaction.guild.id;
-  console.log("guildId...", guildId);
 
   if (action === "reveal_embed") {
     console.log("here????");

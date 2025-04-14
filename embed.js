@@ -5,7 +5,6 @@ import { loadResultsFromFile } from "./helpers.js";
 import { capitalizeWords } from "./helpers.js";
 
 export const infoEmbed = (guildId, content, discType) => {
-  console.log("embed input", guildId, content, discType);
   const { lastMetrics, currentMetrics } = loadResultsFromFile(guildId);
   if (!lastMetrics || !currentMetrics) {
     console.log("No metrics found for this guild");
@@ -15,14 +14,12 @@ export const infoEmbed = (guildId, content, discType) => {
   const metricTrends = getMetricTrends(lastMetrics, currentMetrics);
   const contentNameFormatted = capitalizeWords(content.replace(/_/g, " ")).splice;
   const discTypeFormatted = capitalizeWords(discType.replace(/_/g, " "));
-  let contributors;
   let title = null;
   let fields = [];
   let allContributors;
   if (content === "all_contributor_stats") {
     allContributors = currentMetrics["unique_authors"][discType];
-    // console.log("contrib?", allContributors[0]);
-    // console.log("allContributors", allContributors);
+
     fields.push({
       name: `${discTypeFormatted} Contributor Count`,
       value: `\`${currentMetrics["num_unique_authors"][discType]}\` ${addTrailingEmojis(
@@ -55,15 +52,10 @@ export const infoEmbed = (guildId, content, discType) => {
       value: contributorMap.length > 0 ? contributorMap.join("\n") : "No contributors",
       inline: true,
     });
+    title = `All Contributor Stats`;
   }
   if (content === "new_contributors" || content === "all_contributor_stats") {
     let newContributors = currentMetrics["new_authors"][discType];
-    console.log("newContributors[0", newContributors[0]);
-    // console.log("newContributors", newContributors);
-    // let newContributorsMap = newContributors
-    //   .map((contributor) => `**[@${contributor.login}](${contributor.html_url})**\n`)
-    //   .slice(0, 4);
-
     let newContributorsMap = newContributors.map(
       (contributor) => `**[@${contributor.login}](${contributor.html_url})**\n`
     );
@@ -75,28 +67,34 @@ export const infoEmbed = (guildId, content, discType) => {
   }
   if (content === "returning_contributors" || content === "all_contributor_stats") {
     let returningContributors = currentMetrics["recur_authors"][discType];
-    // console.log("returningContributors", returningContributors);
     let returningContributorsMap = returningContributors.map(
-      (contributor) => `**[@${contributor.login}]${contributor.html_url})**\n`
+      (contributor) => `**[@${contributor.login}](${contributor.html_url})**\n`
     );
     fields.push({
-      name: `Returning ${discType} contributors`,
-      value: returningContributorsMap.length > 0 ? returningContributorsMap.join("\n") : "No returning contributors",
+      name: `Returning ${discTypeFormatted} contributors`,
+      value:
+        returningContributorsMap.length > 0
+          ? returningContributorsMap.join("\n")
+          : "No returning contributors",
       inline: true,
     });
   }
   if (content.includes("closed")) {
     //closed_issue_stats or closed_pull_request_stats
     const closedCount = currentMetrics["num_closed"][discType];
-    console.log("closedCount", closedCount);
     fields.push({
-      name: `${discTypeFormatted} closed`,
-      value: `\`${closedCount}\` ${addTrailingEmojis(metricTrends["delta_num_closed"][discType], "num_closed")}`,
+      name: `${discTypeFormatted} Closed`,
+      value: `\`${closedCount}\` ${addTrailingEmojis(
+        metricTrends["delta_num_closed"][discType],
+        "num_closed"
+      )}`,
       inline: false,
     });
     fields.push({
       name: `Close Time (days)`,
-      value: `Average: \`${currentMetrics["avg_close_time"][discType].toFixed(3)}\` ${addTrailingEmojis(
+      value: `Average: \`${currentMetrics["avg_close_time"][discType].toFixed(
+        3
+      )}\` ${addTrailingEmojis(
         metricTrends["delta_avg_close_time"][discType],
         "avg_close_time"
       )}\nMedian: ${currentMetrics["median_close_time"][discType].toFixed(3)} ${addTrailingEmojis(
@@ -106,25 +104,31 @@ export const infoEmbed = (guildId, content, discType) => {
       inline: false,
     });
     fields.push({
-      name: `Comments before close`,
-      value: `Average: \`${currentMetrics["avg_comments_before_close"][discType].toFixed(3)}\` ${addTrailingEmojis(
+      name: `Comments Before Close`,
+      value: `Average: \`${currentMetrics["avg_comments_before_close"][discType].toFixed(
+        3
+      )}\` ${addTrailingEmojis(
         metricTrends["delta_avg_comments_before_close"][discType],
         "avg_comments_before_close"
-      )}\nMedian: \`${currentMetrics["median_comments_before_close"][discType].toFixed(3)}\` ${addTrailingEmojis(
+      )}\nMedian: \`${currentMetrics["median_comments_before_close"][discType].toFixed(
+        3
+      )}\` ${addTrailingEmojis(
         metricTrends["delta_median_comments_before_close"][discType],
         "median_comments_before_close"
       )}`,
       inline: false,
     });
-    title = `Closed ${discType} Stats`;
+    title = `Closed ${discTypeFormatted} Stats`;
   }
   if (content.includes("opened")) {
     //opened_issue_stats or opened_pull_request_stats
     const openedCount = currentMetrics["num_opened"][discType];
-    console.log("openedCount", openedCount);
     fields.push({
-      name: `${discTypeFormatted} opened`,
-      value: `\`${openedCount}\` ${addTrailingEmojis(metricTrends["delta_num_opened"][discType], "num_opened")}`,
+      name: `${discTypeFormatted} Opened`,
+      value: `\`${openedCount}\` ${addTrailingEmojis(
+        metricTrends["delta_num_opened"][discType],
+        "num_opened"
+      )}`,
       inline: false,
     });
     fields.push({
@@ -147,12 +151,13 @@ export const infoEmbed = (guildId, content, discType) => {
         } #${convo.number}](${convo.html_url})`
     );
     while (toxicConvosValidLength.join("\n").length > 1024 && charLimit > 0) {
-      console.log("toxicConvosValidLength", toxicConvosValidLength.join("\n"));
       charLimit -= 5;
       toxicConvosValidLength = toxicConvos.map(
         (convo) =>
           `[${convo.title.slice(0, charLimit)}${
-            convo.title.length > charLimit && convo.title.slice(0, charLimit).length > 0 ? "..." : ""
+            convo.title.length > charLimit && convo.title.slice(0, charLimit).length > 0
+              ? "..."
+              : ""
           } #${convo.number}](${convo.html_url})`
       );
     }
@@ -161,8 +166,12 @@ export const infoEmbed = (guildId, content, discType) => {
     }
 
     fields.push({
-      name: `Toxic Issue conversations = ${numToxic}`,
-      value: toxicConvos.length > 0 ? toxicConvosValidLength.join("\n") : "- No toxic conversations",
+      name: `\`Issue\` Conversations: \`${numToxic}\` ${addTrailingEmojis(
+        metricTrends["delta_num_toxic_convos"]["issues"],
+        "num_toxic_convos"
+      )}`,
+      value:
+        toxicConvos.length > 0 ? toxicConvosValidLength.join("\n") : "- No toxic conversations",
       inline: true,
     });
   }
@@ -181,16 +190,20 @@ export const infoEmbed = (guildId, content, discType) => {
       toxicConvosValidLength = toxicConvos.map(
         (convo) =>
           `[${convo.title.slice(0, charLimit)}${
-            convo.title.length > charLimit && convo.title.slice(0, charLimit).length > 0 ? "..." : ""
+            convo.title.length > charLimit && convo.title.slice(0, charLimit).length > 0
+              ? "..."
+              : ""
           } #${convo.number}](${convo.html_url})`
       );
     }
     while (toxicConvosValidLength.join("\n").length > 1024) {
       toxicConvosValidLength = toxicConvosValidLength.slice(0, toxicConvosValidLength.length - 1);
     }
-    console.log("toxicConvos", toxicConvos.length);
     fields.push({
-      name: `Toxic Pull Request conversations = ${numToxic}`,
+      name: `\`Pull Request\` Conversations: \`${numToxic}\` ${addTrailingEmojis(
+        metricTrends["delta_num_toxic_convos"]["pull_requests"],
+        "num_toxic_convos"
+      )}`,
       value: toxicConvos.length > 0 ? toxicConvosValidLength.join("\n") : "No toxic conversations",
       inline: true,
     });
@@ -198,7 +211,6 @@ export const infoEmbed = (guildId, content, discType) => {
   if (content === "all_toxic_convos") {
     title = `All Toxic Conversations`;
   }
-  // console.log("fields", fields);
 
   const embedProps = new EmbedBuilder().setColor(0x0099ff).setTitle(title).setFields(fields);
 

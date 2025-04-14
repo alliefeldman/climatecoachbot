@@ -7,6 +7,8 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  Routes,
+  REST,
 } from "discord.js";
 import { client } from "./client.js"; // Import the client instance
 import axios from "axios";
@@ -18,6 +20,8 @@ import { calculateMetrics } from "./calculate-metrics.js";
 import { Octokit } from "@octokit/rest";
 import { generateReportMessage } from "./generate-report-message.js";
 import cron from "node-cron";
+import { registerSlashCommands } from "./slash-commands.js";
+import { on } from "events";
 
 export const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
@@ -101,35 +105,51 @@ const CHANNEL_NAME = "climatecoach";
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const REDIRECT_URI = "http://3.21.231.66:3000/callback";
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-export const guildLastMetrics = new Map();
-export const guildCurrentMetrics = new Map();
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
 
 const SELECT_REPO_MESSAGE = {
   content: "Please select a repository to connect to.",
   components: [
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("open_modal").setLabel("Select Repository").setStyle(ButtonStyle.Primary)
+      new ButtonBuilder()
+        .setCustomId("open_modal")
+        .setLabel("Select Repository")
+        .setStyle(ButtonStyle.Primary)
     ),
   ],
 };
 async function setupGuild(guild) {
+  loadStateFromFile();
   console.log(`🔧 Setting up guild: ${guild.name}`);
 
   let channel = guild.channels.cache.find((ch) => ch.name === CHANNEL_NAME && ch.type === 0);
 
   if (!channel) {
+    const owner = await guild.fetchOwner();
+    const ownerId = owner.user.id;
+    console.log("ownerId! ", ownerId);
     try {
       channel = await guild.channels.create({
         name: CHANNEL_NAME,
         type: 0,
         permissionOverwrites: [
           {
-            id: guild.id,
-            deny: [PermissionsBitField.Flags.SendMessages],
+            id: guild.roles.everyone, // Deny access to everyone
+            deny: [PermissionsBitField.Flags.ViewChannel],
           },
           {
             id: client.user.id,
-            allow: [PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ViewChannel],
+            allow: [
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.ReadMessageHistory,
+            ],
+          },
+          {
+            id: ownerId,
+            allow: [PermissionsBitField.Flags.ViewChannel],
+            deny: [PermissionsBitField.Flags.SendMessages],
           },
         ],
       });
@@ -153,6 +173,7 @@ async function setupGuild(guild) {
   }
 
   if (!welcomeMessageIds.has(guildId)) {
+    onboardingState.set(guildId, { authenticated: false, repoSelected: false });
     const state = crypto.randomBytes(16).toString("hex"); // Generates a 32-character hex string
     console.log("State value:", state);
     stateGuildMap.set(state, guildId);
@@ -165,8 +186,11 @@ async function setupGuild(guild) {
     authUrl.searchParams.append("scope", "repo");
     authUrl.searchParams.append("state", state); // Set the state here
 
-    const WELCOME_MESSAGE = `Hi! To use the bot with your GitHub repository, please authenticate via the link below:
-            \n\n[Connect to GitHub](${authUrl.toString()})`;
+    const WELCOME_MESSAGE = {
+      content: `Hi! To use the bot with your GitHub repository, please authenticate via the link below:
+            \n[Connect to GitHub](${authUrl.toString()})`,
+      // flags: 1 << 2,
+    };
 
     let welcomeMessage = await channel.send(WELCOME_MESSAGE);
     console.log("actual messageID", welcomeMessage.id);
@@ -175,19 +199,18 @@ async function setupGuild(guild) {
     welcomeMessageIds.set(guild.id, welcomeMessage?.id);
     saveStateToFile();
   } else {
-    console.log(`Welcome message already sent in ${guild.name}. so callback....`);
     const welcomeMessageId = welcomeMessageIds.get(guildId);
-    // console.log("messageId", welcomeMessageId);
     const welcomeMessage = await channel.messages.fetch(welcomeMessageId);
-    if (welcomeMessage) {
-      // console.log("Welcome message found:", welcomeMessage.id);
-      // console.log("Welcome message content:", welcomeMessage.content);
+    if (welcomeMessage && onboardingState.get(guildId)?.authenticated === true) {
       await welcomeMessage.edit("Authentication successful! 🎉");
     } else {
       console.error("Failed to fetch the message.");
     }
     let selectRepoMessage;
-    if (!selectRepoMessageIds.has(guildId)) {
+    if (
+      !selectRepoMessageIds.has(guildId) &&
+      onboardingState.get(guildId)?.authenticated === true
+    ) {
       selectRepoMessage = await channel.send(SELECT_REPO_MESSAGE);
       selectRepoMessageIds.set(guildId, selectRepoMessage.id);
       saveStateToFile();
@@ -209,102 +232,81 @@ client.once("ready", async () => {
 
 // Function to run at 12:30 AM
 async function collectAllRepoData() {
-  await user.send("It's 12:30 AM! Running your task now.");
-  for (const [guildId, repoData] of guildRepoData) {
+  loadStateFromFile();
+  for (const guild of client.guilds.cache.values()) {
+    const guildId = guild.id;
+    const repoData = guildRepoData.get(guildId);
     if (!repoData || !repoData.owner || !repoData.repoName) {
       console.log(`No repository data for ${message.guild.name}. Skipping...`);
-      continue;
+      return;
     }
-    /// UNCOMMENT TO CALCULATE METRICS
     const lastMetrics = await calculateMetrics(repoData.owner, repoData.repoName, "week", 1);
     const currentMetrics = await calculateMetrics(repoData.owner, repoData.repoName, "week", 0);
     loadResultsFromFile();
-    saveResultsToFile(message.guild.id, lastMetrics, currentMetrics);
+    saveResultsToFile(guildId, lastMetrics, currentMetrics);
   }
 }
 
 // Function to run at 9:00 AM
 async function sendAllRepoData() {
-  console.log("ayo????");
-  for (const [guildId, repoData] of guildRepoData) {
-    console.log("ayo");
+  loadStateFromFile();
+  client.guilds.cache.forEach(async (guild) => {
+    console.log("guild", guild.name);
+    const guildId = guild.id;
+    const repoData = guildRepoData.get(guildId);
     if (!repoData || !repoData.owner || !repoData.repoName) {
-      console.log(`No repository data for ${message.guild.name}. Skipping...`);
-      continue;
+      console.log(`No repository data for ${guild.name}. Skipping...`);
+      return;
     }
-    const channel = client.guilds.cache
-      .get(guildId)
-      ?.channels.cache.find((ch) => ch.name === CHANNEL_NAME && ch.isTextBased());
-
+    const channel = guild.channels.cache.find((ch) => ch.name === CHANNEL_NAME && ch.isTextBased());
     if (!channel) {
-      console.log(`Channel ${CHANNEL_NAME} not found in guild ${guildId}. Skipping...`);
-      continue;
+      console.log(`Channel ${CHANNEL_NAME} not found in guild ${guild.name}. Skipping...`);
+      return;
     }
-
     const reportMessages = generateReportMessage(guildId);
     function sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     for (const reportMessage of reportMessages) {
-      await message.channel.send({
+      await channel.send({
         ...reportMessage,
         flags: 1 << 2, // optional: only if you really need it here
       });
       const interval = 500;
       await sleep(interval);
     }
-
-    // const activeContributors = await getActiveContributors(repoData.owner, repoData.repoName, repoData.accessToken);
-    // channel.send(`📝 Active contributors in the past week: ${activeContributors}`);
-  }
+  });
 }
 
 // Scheduling the task at 12:30 AM server time
-cron.schedule("30 6 * * *", (user) => collectAllRepoData(user), {
-  scheduled: true,
-});
+cron.schedule(
+  "30 0 * * *",
+  async () => {
+    console.log("⏰ collecting all report data...");
+    await collectAllRepoData();
+  },
+  {
+    timezone: "America/New_York",
+  }
+);
 
 // Scheduling the task at 9:00 AM server time
-
-// 0 9 * * *
-cron.schedule("0 9 * * *", async () => {
-  console.log("⏰ Sending daily message...");
-  await sendAllRepoData();
-});
-
-// Every 65 minutes
-// cron.schedule("*/65 * * * *", async () => {
-//   console.log("⏰ Sending daily message...");
-
-//   client.guilds.cache.forEach(async (guild) => {
-//     try {
-//       const channel = guild.channels.cache.find(
-//         (ch) => ch.name === CHANNEL_NAME && ch.isTextBased()
-//       );
-//       console.log("does it get here");
-//       if (!channel) return;
-//       await channel.send("🌅 Good morning! Here's your daily update.");
-
-//       const repoData = guildRepoData.get(guild.id); // Get repo data for the guild
-//       if (!repoData || !repoData.owner || !repoData.repoName) {
-//         console.log(`No repository data for ${guild.name}. Skipping...`);
-//         return;
-//       }
-//       // const activeContributors = await getActiveContributors(repoData.owner, repoData.repoName, repoData.accessToken);
-//       // channel.send(`📝 Active contributors in the past week: ${activeContributors}`);
-//       // console.log(`✅ Sent to ${guild.name} (${channel.name})`);
-
-//     } catch (err) {
-//       console.error(`❌ Error in ${guild.name}:`, err);
-//     }
-//   });
-// });
+cron.schedule(
+  "0 9 * * *",
+  async () => {
+    console.log("⏰ Sending daily message...");
+    await sendAllRepoData();
+  },
+  {
+    timezone: "America/New_York",
+  }
+);
 
 // Handle OAuth callback
 app.get("/callback", async (req, res) => {
   const { code, state } = req.query;
-  console.log("state -> ", state);
+
   const guildId = stateGuildMap.get(state);
   stateGuildMap.delete(state);
   saveStateToFile();
@@ -346,21 +348,18 @@ app.get("/callback", async (req, res) => {
       return;
     }
     res.send("GitHub authentication successful!");
-    console.log("Guild ID:", guildId);
     guildRepoData.set(guildId, { accessToken });
-    console.log("Access token is set correctly i hop:", accessToken);
     saveStateToFile();
 
     // Try to infer guildId from the welcomeMessageIds (you could improve this later)
     const messageId = welcomeMessageIds.get(guildId);
     const guild = client.guilds.cache.get(guildId);
-    const channel = guild?.channels.cache.find((ch) => ch.name === CHANNEL_NAME && ch.isTextBased());
-    // console.log("messageId", messageId);
-    // Send the list of repositories back to the user for selection    // const repoSelectionMessage = `✅ GitHub authentication successful! 🎉 Please select a repository to connect to: \n\n${repoList.join("\n")}`;
+    const channel = guild?.channels.cache.find(
+      (ch) => ch.name === CHANNEL_NAME && ch.isTextBased()
+    );
+    // Send the list of repositories back to the user for selection
     const welcomeMessage = await channel.messages.fetch(messageId);
     if (welcomeMessage) {
-      console.log("Welcome message found:", welcomeMessage.id);
-      console.log("Welcome message content:", welcomeMessage.content);
       await welcomeMessage.edit("Authentication successful! 🎉");
     } else {
       console.error("Failed to fetch the message.");
@@ -380,11 +379,9 @@ app.get("/callback", async (req, res) => {
       selectRepoMessageIds.set(guildId, selectRepoMessage.id);
       saveStateToFile();
     }
-    // You can store the access token for the user here, then proceed with additional logic
   } catch (error) {
     console.error("Error during token exchange:", error);
     return;
-    // res.send("Error authenticating with GitHub.");
   }
 });
 
@@ -402,77 +399,6 @@ async function fetchRepoData(owner, repoName, token) {
     return { error: "Failed to fetch repository data." };
   }
 }
-client.on("messageCreate", async (message) => {
-  // Avoid bot replying to itself
-  if (message.author.bot) return;
-
-  // Check if the message was sent in the correct channel
-  if (message.channel.name === "climatecoach") {
-    // Example of checking the content of the message
-    if (message.content.includes("report")) {
-      // If the message contains "help", reply with a help message
-      const repoData = guildRepoData.get(message.guild.id); // Get repo data for the guild
-      if (!repoData || !repoData.owner || !repoData.repoName) {
-        console.log(`No repository data for ${message.guild.name}. Skipping...`);
-        return message.reply("No repository data found. Please link a GitHub repository first.");
-      }
-
-      /// UNCOMMENT TO CALCULATE METRICS
-      const lastMetrics = await calculateMetrics(repoData.owner, repoData.repoName, "week", 1);
-      const currentMetrics = await calculateMetrics(repoData.owner, repoData.repoName, "week", 0);
-      loadResultsFromFile();
-      saveResultsToFile(message.guild.id, lastMetrics, currentMetrics);
-
-      // console.log("metrics obtained and saved!");
-
-      const reportMessages = generateReportMessage(message.guild.id);
-
-      for (const reportMessage of reportMessages) {
-        await message.channel.send({
-          ...reportMessage,
-          flags: 1 << 2, // optional: only if you really need it here
-        });
-        const interval = 500;
-        await sleep(interval);
-      }
-    } else {
-      // Default response for other messages
-      console.log("content", message);
-      await message.reply("I didn't quite catch that. Can you please provide more details?");
-    }
-    if (message.content.startsWith("!githubconnect")) {
-      // Send the user to authenticate via GitHub OAuth
-      message.reply("Please authenticate via the GitHub link sent earlier!");
-    }
-
-    // After successful GitHub authentication, prompt user for repository
-    if (guildRepoData.has(message.guild.id) && !guildRepoData.get(message.guild.id).repoName) {
-      message.reply("Great! Please provide the GitHub repository you'd like to connect to (e.g., 'owner/repo-name').");
-    }
-
-    // User provides repository name
-    if (message.content.includes("/")) {
-      const [owner, repoName] = message.content.split("/");
-
-      if (guildRepoData.has(message.guild.id)) {
-        guildRepoData.get(message.guild.id).repoName = repoName;
-        guildRepoData.get(message.guild.id).owner = owner;
-
-        // Store the token (usually securely in a database)
-        let connectedMessage = await message.update(
-          `You have successfully connected to the repository: ${owner}/${repoName}`
-        );
-        connectedMessage.pin();
-        // console.log(`User connected to repository: ${owner}/${repoName}`);
-
-        // Example: Fetch repository data using the GitHub API
-        // const { accessToken } = guildRepoData.get(message.guild.id);
-        // const repoData = await fetchRepoData(owner, repoName, accessToken);
-        // message.reply(`Repository Data: ${JSON.stringify(repoData)}`);
-      }
-    }
-  }
-});
 
 function extractRepoDetails(repoUrl) {
   // Remove "https://github.com/" part and split the remaining URL by "/"
@@ -480,9 +406,10 @@ function extractRepoDetails(repoUrl) {
 
   // Ensure the URL is correctly formatted (i.e., has 2 parts)
   if (parts.length !== 2) {
-    throw new Error("Invalid repository URL. It should be in the format 'https://github.com/owner/repo-name'.");
+    throw new Error(
+      "Invalid repository URL. It should be in the format 'https://github.com/owner/repo-name'."
+    );
   }
-
   const owner = parts[0];
   const repoName = parts[1];
 
@@ -490,6 +417,132 @@ function extractRepoDetails(repoUrl) {
 }
 
 client.on("interactionCreate", async (interaction) => {
+  if (interaction.commandName) {
+    if (interaction.commandName === "report") {
+      // await interaction.reply("Hello, World!");
+      const repoData = guildRepoData.get(interaction.guild.id); // Get repo data for the guild
+      if (!repoData || !repoData.owner || !repoData.repoName) {
+        console.log(`No repository data for ${interaction.guild.name}. Skipping...`);
+        return interaction.reply(
+          "No repository data found. Please authenticate/link a GitHub repository first."
+        );
+      }
+      await interaction.reply("Generating report...");
+      const reportMessages = generateReportMessage(interaction.guild.id);
+
+      for (const reportMessage of reportMessages) {
+        await interaction.channel.send({
+          ...reportMessage,
+          flags: 1 << 2, // optional: only if you really need it here
+        });
+        const interval = 500;
+        await sleep(interval);
+      }
+    } else if ((interaction.commandName = "calculate-metrics")) {
+      const guildId = interaction.guild.id;
+      const repoData = guildRepoData.get(guildId);
+      if (!repoData || !repoData.owner || !repoData.repoName) {
+        console.log(`No repository data for ${interaction.guild.name}. Skipping...`);
+        interaction.reply(
+          "Please authenticate + connect to a repository before running `/calculate-metrics`!"
+        );
+        return;
+      }
+      let calculatingMetrics = await interaction.reply(
+        "*Calculating metrics... (May take a few minutes)*"
+      );
+      console.log("Calculating last metrics...");
+      const lastMetrics = await calculateMetrics(repoData.owner, repoData.repoName, "week", 1);
+      console.log("Calculating current metrics...");
+      const currentMetrics = await calculateMetrics(repoData.owner, repoData.repoName, "week", 0);
+      loadResultsFromFile();
+      saveResultsToFile(guildId, lastMetrics, currentMetrics);
+      console.log("Metrics calculated and saved!");
+      await calculatingMetrics.edit("Metrics calculated! 🎉 Run `/report` to view them.");
+    } else if (interaction.commandName === "help") {
+      const helpMessage = `**Commands:**
+      \`/report\` - Generate a report for the connected GitHub repository.
+      \`/calculate-metrics\` - Calculate the metrics for the connected GitHub repository.
+      \`/configure\` - Configure the bot settings for your server, including authenticating, connecting to a repository, and the time interval used when fetching metrics.
+      \`/disconnect\` - Disconnect the bot from the server.
+      \`/help\` - Get help with using the bot and its commands.`;
+      await interaction.reply(helpMessage);
+    } else if (interaction.commandName === "disconnect") {
+      const guildId = interaction.guild.id;
+      // Clear all stored data for the guild
+      guildRepoData.delete(guildId);
+      onboardingState.delete(guildId);
+      welcomeMessageIds.delete(guildId);
+      selectRepoMessageIds.delete(guildId);
+      stateGuildMap.delete(guildId);
+      saveStateToFile();
+      // Unpin and delete all pinned messages in the channel
+      const channel = interaction.channel;
+      if (channel && channel.isTextBased()) {
+        const pinnedMessages = await channel.messages.fetchPinned();
+        console.log("pinnedMessages", pinnedMessages);
+        for (const [_, pinnedMessage] of pinnedMessages) {
+          await pinnedMessage.unpin();
+          await pinnedMessage.delete();
+        }
+      }
+
+      await interaction.reply(
+        "The bot has been disconnected from this server. All data has been cleared."
+      );
+      await interaction.channel.send("Please run `/configure` to reconnect.");
+    } else if (interaction.commandName === "configure") {
+      if (interaction.options.getString() === "repository") {
+        const repoUrl = interaction.options.getString("url");
+        try {
+          const { owner, repoName } = extractRepoDetails(repoUrl);
+          if (!owner || !repoName) {
+            return interaction.reply({
+              content: "Invalid repository format. Please enter it as `owner/repo-name`.",
+              ephemeral: true,
+            });
+          }
+          const guildId = interaction.guild.id;
+          if (!guildRepoData.has(guildId)) {
+            guildRepoData.set(guildId, {});
+          }
+
+          guildRepoData.get(guildId).owner = owner;
+          guildRepoData.get(guildId).repoName = repoName;
+
+          onboardingState.set(guildId, { authenticated: true, repoSelected: true });
+          saveStateToFile();
+
+          await interaction.reply(`Repository successfully set to: \`${owner}/${repoName}\` 🔗`);
+
+          // Fetch data from GitHub API
+          const { accessToken } = guildRepoData.get(guildId);
+          const repoData = await fetchRepoData(owner, repoName, accessToken);
+          console.log("Repository data fetched:", repoData);
+        } catch (error) {
+          console.error("Error processing repository URL:", error);
+          return interaction.reply({
+            content: "An error occurred while processing the repository URL.",
+            ephemeral: true,
+          });
+        }
+      } else if (interaction.options.getString() === "interval") {
+        const interval = interaction.options.getString("interval");
+
+        if (interval) {
+          // Update the interval for the guild
+          // onboardingState.set(interaction.guild.id, { interval });
+          // saveStateToFile();
+          await interaction.reply(`Interval successfully set to: \`${interval}\``);
+        } else {
+          await interaction.reply("Please provide a valid interval -- `week` or `day`");
+        }
+      } else if (interaction.options.getString() === "authenticate") {
+        setupGuild(interaction.guild);
+      }
+    }
+  }
+
   if (interaction.customId === "open_modal") {
     const modal = new ModalBuilder()
       .setCustomId("repo_modal")
@@ -581,4 +634,7 @@ client.on("channelDelete", async (channel) => {
 });
 
 loadStateFromFile();
-client.login(process.env.DISCORD_TOKEN);
+client.login(DISCORD_TOKEN);
+
+// Call the function to register the slash command
+registerSlashCommands();

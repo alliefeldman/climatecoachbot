@@ -50,19 +50,6 @@ export async function getRecentPRComments(owner, repoName, since) {
     per_page: 100,
     since: since, // You can filter comments since a specific date
   });
-  console.log("prComments", prComments.length);
 
   return prComments;
 }
-
-// export async function fetchGitHubData(owner, repoName) {
-//   const [repo, issues, prs, issueComments, prComments] = await Promise.all([
-//     getRepoObject(owner, repoName),
-//     getAllIssues(owner, repoName),
-//     getAllPullRequests(owner, repoName),
-//     getAllIssueComments(owner, repoName),
-//     getAllPRComments(owner, repoName)
-//   ]);
-
-//   return { repo, issues, prs, issueComments, prComments };
-// }
