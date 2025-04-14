@@ -1,214 +1,61 @@
-function calculateChangeRatio(last, current) {
-  return (current - last) / last;
-}
+import {
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} from "discord.js";
+import { client } from "./client.js";
+import { getMetricTrends } from "./get-metric-trends.js";
+import { addTrailingEmojis } from "./emojis.js";
+import { infoEmbed } from "./embed.js";
+import { loadResultsFromFile, capitalizeWords, formatDate, plural } from "./helpers.js";
 
-function addTrendEmoji(trend) {
-  if (trend > 0) {
-    return " :chart_with_upwards_trend:";
-  } else if (trend < 0) {
-    return " :chart_with_downwards_trend:";
-  } else {
-    return " :balance_scale:";
+const seeEmbedButton = (content, discType) => {
+  const contentNameFormatted = capitalizeWords(content.replace(/_/g, " "));
+  return new ButtonBuilder()
+    .setCustomId(`reveal_embed:${content}:${discType}`)
+    .setLabel(`See ${contentNameFormatted}`)
+    .setStyle(ButtonStyle.Secondary);
+};
+
+const hideEmbedButton = (content, discType) => {
+  const contentNameFormatted = capitalizeWords(content.replace(/_/g, " "));
+  return new ButtonBuilder()
+    .setCustomId(`hide_embed:${content}:${discType}`)
+    .setLabel(`Hide ${contentNameFormatted}`)
+    .setStyle(ButtonStyle.Primary);
+};
+
+function isRelevantTrend(trend) {
+  // console.log("trend", trend);
+  if (!trend) {
+    return false;
   }
+  return Math.abs(Math.abs(trend) - 1) >= 0.2;
 }
 
-function getMetricTrends(lastMetrics, currentMetrics) {
-
-  const res = {
-    // Community
-    "delta_num_unique_authors": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_unique_authors"]["issues"],
-        currentMetrics["num_unique_authors"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_unique_authors"]["pull_requests"],
-        currentMetrics["num_unique_authors"]["pull_requests"])
-    },
-    "delta_num_new_authors": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_new_authors"]["issues"],
-        currentMetrics["num_new_authors"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_new_authors"]["pull_requests"],
-        currentMetrics["num_new_authors"]["pull_requests"])
-    },
-    "delta_num_recur_authors": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_recur_authors"]["issues"],
-        currentMetrics["num_recur_authors"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_recur_authors"]["pull_requests"],
-        currentMetrics["num_recur_authors"]["pull_requests"])
-    },
-
-    // Close Activity
-    "delta_num_closed": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_closed"]["issues"],
-        currentMetrics["num_closed"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_closed"]["pull_requests"],
-        currentMetrics["num_closed"]["pull_requests"])
-    },
-    "delta_num_closed_0_comments": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_closed_0_comments"]["issues"],
-        currentMetrics["num_closed_0_comments"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_closed_0_comments"]["pull_requests"],
-        currentMetrics["num_closed_0_comments"]["pull_requests"])
-    },
-    "delta_avg_close_time": {
-      "issues": calculateChangeRatio(
-        lastMetrics["avg_close_time"]["issues"],
-        currentMetrics["avg_close_time"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["avg_close_time"]["pull_requests"],
-        currentMetrics["avg_close_time"]["pull_requests"])
-    },
-    "delta_median_close_time": {
-      "issues": calculateChangeRatio(
-        lastMetrics["median_close_time"]["issues"],
-        currentMetrics["median_close_time"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["median_close_time"]["pull_requests"],
-        currentMetrics["median_close_time"]["pull_requests"])
-    },
-    "delta_median_comments_before_close": {
-      "issues": calculateChangeRatio(
-        lastMetrics["median_comments_before_close"]["issues"],
-        currentMetrics["median_comments_before_close"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["median_comments_before_close"]["pull_requests"],
-        currentMetrics["median_comments_before_close"]["pull_requests"])
-    },
-    "delta_avg_comments_before_close": {
-      "issues": calculateChangeRatio(
-        lastMetrics["avg_comments_before_close"]["issues"],
-        currentMetrics["avg_comments_before_close"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["avg_comments_before_close"]["pull_requests"],
-        currentMetrics["avg_comments_before_close"]["pull_requests"])
-    },
-    "delta_num_opened": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_opened"]["issues"],
-        currentMetrics["num_opened"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_opened"]["pull_requests"],
-        currentMetrics["num_opened"]["pull_requests"])
-    },
-    "delta_avg_recent_comments": {
-      "issues": calculateChangeRatio(
-        lastMetrics["avg_recent_comments"]["issues"],
-        currentMetrics["avg_recent_comments"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["avg_recent_comments"]["pull_requests"],
-        currentMetrics["avg_recent_comments"]["pull_requests"])
-    },
-    "delta_median_recent_comments": {
-      "issues": calculateChangeRatio(
-        lastMetrics["median_recent_comments"]["issues"],
-        currentMetrics["median_recent_comments"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["median_recent_comments"]["pull_requests"],
-        currentMetrics["median_recent_comments"]["pull_requests"])
-    },
-    "delta_num_toxic_convos": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_toxic_convos"]["issues"],
-        currentMetrics["num_toxic_convos"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_toxic_convos"]["pull_requests"],
-        currentMetrics["num_toxic_convos"]["pull_requests"])
-    },
-    "delta_num_toxic_comments": {
-      "issues": calculateChangeRatio(
-        lastMetrics["num_toxic_comments"]["issues"],
-        currentMetrics["num_toxic_comments"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["num_toxic_comments"]["pull_requests"],
-        currentMetrics["num_toxic_comments"]["pull_requests"])
-    },
-    "delta_max_toxic": { // as of now, its max toxicity for RECENT comments
-      "issues": calculateChangeRatio(
-        lastMetrics["max_toxic"]["issues"],
-        currentMetrics["max_toxic"]["issues"]),
-      "pull_requests": calculateChangeRatio(
-        lastMetrics["max_toxic"]["pull_requests"],
-        currentMetrics["max_toxic"]["pull_requests"])
-    },
-    "avg_tenure": calculateChangeRatio(
-      lastMetrics["avg_tenure"],
-      currentMetrics["avg_tenure"]),
-  }
-  return res;
-}
-
-function formatDate(dateString) {
-  const date = new Date(dateString);
-  const formatted = date.toLocaleDateString("en-US"); // "4/10/2025"
-  return formatted;
-}
-
-
-export function generateReportMessage(lastMetrics, currentMetrics) {
-
+export function generateReportMessage(guildId) {
+  // const lastMetrics = guildLastMetrics.get(guildId);
+  // const currentMetrics = guildCurrentMetrics.get(guildId);
+  const { lastMetrics, currentMetrics } = loadResultsFromFile(guildId);
   const metricTrends = getMetricTrends(lastMetrics, currentMetrics);
+  console.log("huh...");
 
-  const reportTitle =
-    `# Community Health Update (${formatDate(lastMetrics.since)} - ${formatDate(currentMetrics.since)})`;
+  const reportTitle = `# Community Health Update (${formatDate(currentMetrics.since)} - ${formatDate(
+    currentMetrics.end
+  )})`;
 
-  const communityUpdateMetricTrends = {
+  const communityTrends = {
     "num_unique_authors-issues": metricTrends["delta_num_unique_authors"]["issues"],
     "num_unique_authors-pull_requests": metricTrends["delta_num_unique_authors"]["pull_requests"],
     "num_new_authors-issues": metricTrends["delta_num_new_authors"]["issues"],
     "num_new_authors-pull_requests": metricTrends["delta_num_new_authors"]["pull_requests"],
     "num_recur_authors-issues": metricTrends["delta_num_recur_authors"]["issues"],
-    "num_recur_authors-pull_requests": metricTrends["delta_num_recur_authors"]["pull_requests"]
-  }
-
-  const communityUpdateMetrics = {
-    "num_authors-issues":
-      "> ### You had `" +
-      currentMetrics["num_unique_authors"]["issues"] +
-      "` active *issue* contributor" +
-      (currentMetrics["num_unique_authors"]["issues"] != 1 ? "s" : "") +
-      addTrendEmoji(communityUpdateMetricTrends["num_unique_authors-issues"]) +
-      "\n" +
-      "> - New = `" +
-      currentMetrics["num_new_authors"]["issues"] +
-      "` " +
-      addTrendEmoji(communityUpdateMetricTrends["num_new_authors-issues"]) +
-      "\n" +
-      "> - Returning = `" +
-      currentMetrics["num_recur_authors"]["issues"] +
-      "` " +
-      addTrendEmoji(communityUpdateMetricTrends["num_recur_authors-issues"]),
-    "num_authors-pull_requests":
-      "> ### You had `" +
-      currentMetrics["num_unique_authors"]["pull_requests"] +
-      "` active *pull request* contributor" +
-      (currentMetrics["num_unique_authors"]["pull_requests"] != 1 ? "s" : "") +
-      addTrendEmoji(communityUpdateMetricTrends["num_unique_authors-pull_requests"]) +
-      "\n" +
-      "> - New = `" +
-      currentMetrics["num_new_authors"]["pull_requests"] +
-      "` " +
-      addTrendEmoji(communityUpdateMetricTrends["num_new_authors-pull_requests"]) +
-      "\n" +
-      "> - Returning = `" +
-      currentMetrics["num_recur_authors"]["pull_requests"] +
-      "` " +
-      addTrendEmoji(communityUpdateMetricTrends["num_recur_authors-pull_requests"])
-  }
-
-
-
-  const community =
-    `> ## Community
-  ${Object.values(communityUpdateMetrics).join("\n")}
-    `;
+    "num_recur_authors-pull_requests": metricTrends["delta_num_recur_authors"]["pull_requests"],
+    avg_tenure: metricTrends["avg_tenure"],
+  };
 
   const closeActivityMetricTrends = {
     "num_closed-issues:": metricTrends["delta_num_closed"]["issues"],
@@ -223,50 +70,474 @@ export function generateReportMessage(lastMetrics, currentMetrics) {
     "median_comments_before_close-pull_requests": metricTrends["delta_median_comments_before_close"]["pull_requests"],
     "avg_comments_before_close-issues": metricTrends["delta_avg_comments_before_close"]["issues"],
     "avg_comments_before_close-pull_requests": metricTrends["delta_avg_comments_before_close"]["pull_requests"],
+  };
+
+  const modal = new ModalBuilder().setCustomId("info_modal").setTitle("Details");
+
+  const infoInput = new TextInputBuilder()
+    .setCustomId("fake_display")
+    .setLabel("Information")
+    .setStyle(TextInputStyle.Paragraph)
+    .setValue("Here’s some read-only info for you.")
+    .setRequired(false); // optional field
+
+  const firstActionRow = new ActionRowBuilder().addComponents(infoInput);
+  modal.addComponents(firstActionRow);
+
+  function communitySection() {
+    const issueCount = currentMetrics["num_unique_authors"]["issues"];
+    const issueTrend = communityTrends["num_unique_authors-issues"];
+    const issueNewCount = currentMetrics["num_new_authors"]["issues"];
+    const issueNewTrend = communityTrends["num_new_authors-issues"];
+    const issueRecurCount = currentMetrics["num_recur_authors"]["issues"];
+    const issueRecurTrend = communityTrends["num_recur_authors-issues"];
+    const pullRequestCount = currentMetrics["num_unique_authors"]["pull_requests"];
+    const pullRequestTrend = communityTrends["num_unique_authors-pull_requests"];
+    const pullRequestNewCount = currentMetrics["num_new_authors"]["pull_requests"];
+    const pullRequestNewTrend = communityTrends["num_new_authors-pull_requests"];
+    const pullRequestRecurCount = currentMetrics["num_recur_authors"]["pull_requests"];
+    const pullRequestRecurTrend = communityTrends["num_recur_authors-pull_requests"];
+
+    const communityTitle = { content: "## Community" };
+
+    const activeIssueContributors = {
+      content:
+        `### Total \`ISSUE\` contributors: \`${issueCount}\`` +
+        addTrailingEmojis(issueTrend, "num_unique_authors") +
+        (isRelevantTrend(issueNewTrend)
+          ? `\n- \`New: ${issueNewCount}\` ` + addTrailingEmojis(issueNewTrend, "num_new_authors")
+          : "") +
+        (isRelevantTrend(issueRecurTrend)
+          ? `\n- \`Returning: ${issueRecurCount}\` ` + addTrailingEmojis(issueRecurTrend, "num_recur_authors")
+          : ""),
+      components: [
+        (() => {
+          const possibleButtons = new ActionRowBuilder();
+          if (issueCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("all_contributor_stats", "issues"));
+          }
+          if (issueNewCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("new_contributors", "issues"));
+          }
+          if (issueRecurCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("returning_contributors", "issues"));
+          }
+          return possibleButtons;
+        })(),
+      ],
+    };
+    if (activeIssueContributors.components[0].components.length === 0) {
+      activeIssueContributors.components = null;
+    }
+
+    const activePullRequestContributors = {
+      content:
+        `### Total \`PULL REQUEST\` contributors: \`${pullRequestCount}\`` +
+        addTrailingEmojis(pullRequestTrend, "num_unique_authors") +
+        (isRelevantTrend(pullRequestNewTrend)
+          ? `\n- \`New: ${pullRequestNewCount}\` ` + addTrailingEmojis(pullRequestNewTrend, "num_new_authors")
+          : "") +
+        (isRelevantTrend(pullRequestRecurTrend)
+          ? `\n- \`Returning: ${pullRequestRecurCount}\` ` +
+            addTrailingEmojis(pullRequestRecurTrend, "num_recur_authors")
+          : ""),
+      components: [
+        (() => {
+          const possibleButtons = new ActionRowBuilder();
+          if (pullRequestCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("all_contributor_stats", "pull_requests"));
+          }
+          if (pullRequestNewCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("new_contributors", "pull_requests"));
+          }
+          if (pullRequestRecurCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("returning_contributors", "pull_requests"));
+          }
+          return possibleButtons;
+        })(),
+      ],
+    };
+    if (activePullRequestContributors.components[0].components.length === 0) {
+      activePullRequestContributors.components = null;
+    }
+
+    const section = [communityTitle, activeIssueContributors, activePullRequestContributors];
+
+    return section;
   }
-  const closeActivityMetrics = {
-    "num_closed-issues":
-      "> ### `" +
-      currentMetrics["num_closed"]["issues"] +
-      "` **issue**" +
-      (currentMetrics["num_closed"]["issues"] != 1 ? "*s* were" : " was") +
-      " closed " +
-      addTrendEmoji(closeActivityMetricTrends["num_closed-issues"]),
-    "close_time-issues":
-      "> - Issue *close time (days)*:\n" +
-      ">   - Average = `" +
-      currentMetrics["avg_close_time"]["issues"] +
-      "`" +
-      addTrendEmoji(closeActivityMetricTrends["avg_close_time-issues"]) +
-      "\n" +
-      ">   - Median = `" +
-      currentMetrics["median_close_time"]["issues"] +
-      "`" +
-      addTrendEmoji(closeActivityMetricTrends["median_close_time-issues"]),
-    "comments_before_close-issues":
-      "> - Issue *comments* before close:\n" +
-      ">   - Average = `" +
-      currentMetrics["avg_comments_before_close"]["issues"] +
-      "`" +
-      addTrendEmoji(closeActivityMetricTrends["avg_comments_before_close-issues"]) +
-      "\n" +
-      ">   - Median = `" +
-      currentMetrics["median_comments_before_close"]["issues"] +
-      "`" +
-      addTrendEmoji(closeActivityMetricTrends["median_comments_before_close-issues"]),
-    "num_closed_0_comments-issues":
-      "> - Issues closed with 0 comments = `" +
-      currentMetrics["num_closed_0_comments"]["issues"] +
-      "` " +
-      addTrendEmoji(closeActivityMetricTrends["num_closed_0_comments-issues"]),
+
+  function closeActivitySection() {
+    const issueCount = currentMetrics["num_closed"]["issues"];
+    const issueTrend = closeActivityMetricTrends["num_closed-issues"];
+    const issue0Comm = currentMetrics["num_closed_0_comments"]["issues"];
+    const issue0CommTrend = closeActivityMetricTrends["num_closed_0_comments-issues"];
+    const pullRequestCount = currentMetrics["num_closed"]["pull_requests"];
+    const pullRequestTrend = closeActivityMetricTrends["num_closed-pull_requests"];
+    const pullRequest0Comm = currentMetrics["num_closed_0_comments"]["pull_requests"];
+    const pullRequest0CommTrend = closeActivityMetricTrends["num_closed_0_comments-pull_requests"];
+    const avgCloseTimeIssue = currentMetrics["avg_close_time"]["issues"].toFixed(3);
+    const avgCloseTimeIssueTrend = closeActivityMetricTrends["avg_close_time-issues"];
+    const medCloseTimeIssue = currentMetrics["median_close_time"]["issues"].toFixed(3);
+    const medCloseTimeIssueTrend = closeActivityMetricTrends["median_close_time-issues"];
+    const avgCloseTimePR = currentMetrics["avg_close_time"]["pull_requests"].toFixed(3);
+    const avgCloseTimePRTrend = closeActivityMetricTrends["avg_close_time-pull_requests"];
+    const medCloseTimePullRequest = currentMetrics["median_close_time"]["pull_requests"].toFixed(3);
+    const medClosePRTrend = closeActivityMetricTrends["median_close_time-pull_requests"];
+    const avgCommIssue = currentMetrics["avg_comments_before_close"]["issues"].toFixed(3);
+    const avgCommIssueTrend = closeActivityMetricTrends["avg_comments_before_close-issues"];
+    const medCommIssue = currentMetrics["median_comments_before_close"]["issues"].toFixed(3);
+    const medCommIssueTrend = closeActivityMetricTrends["median_comments_before_close-issues"];
+    const avgCommPR = currentMetrics["avg_comments_before_close"]["pull_requests"].toFixed(3);
+    const avgCommPRTrend = closeActivityMetricTrends["avg_comments_before_close-pull_requests"];
+    const medCommPR = currentMetrics["median_comments_before_close"]["pull_requests"].toFixed(3);
+    const medCommPRTrend = closeActivityMetricTrends["median_comments_before_close-pull_requests"];
+    const closeActivityTitle = { content: "## Close Activity" };
+    const numClosedIssues = {
+      content: `### \`ISSUES\` closed: \`${issueCount}\` ${addTrailingEmojis(issueTrend, "num_closed")}`,
+      component: [() => {}],
+    };
+
+    const issueCloseTime = {
+      content: `- *Close time (days)*:\n  - \`Average: ${avgCloseTimeIssue}\` ${addTrailingEmojis(
+        avgCloseTimeIssueTrend,
+        "avg_close_time"
+      )}\n  - \`Median: ${medCloseTimeIssue}\` ${addTrailingEmojis(medCloseTimeIssueTrend, "median_close_time")}`,
+    };
+
+    const issueNumComments = {
+      content: `- *Number of comments* before close:\n  - \`Average: ${avgCommIssue}\` ${addTrailingEmojis(
+        avgCommIssueTrend,
+        "avg_comments_before_close"
+      )}\n  - \`Median: ${medCommIssue}\` ${addTrailingEmojis(medCommIssueTrend, "median_comments_before_close")}`,
+    };
+
+    const issue0Comments = {
+      content: `- Issues closed with 0 comments = \`${issue0Comm}\` ${addTrailingEmojis(
+        issue0CommTrend,
+        "num_closed_0_comments"
+      )}`,
+    };
+
+    const issueButtons = {
+      content: "",
+      components: [
+        (() => {
+          const possibleButtons = new ActionRowBuilder();
+          possibleButtons.addComponents(seeEmbedButton("closed_issue_stats", "issues"));
+          return possibleButtons;
+        })(),
+      ],
+    };
+
+    const numClosedPullRequests = {
+      content: `### \`PULL REQUESTS\` closed: \`${pullRequestCount}\` ${addTrailingEmojis(
+        pullRequestTrend,
+        "num_closed"
+      )}`,
+    };
+
+    const pullRequestCloseTime = {
+      content: `- *Close time (days)*:\n  - \`Average: ${avgCloseTimePR}\` ${addTrailingEmojis(
+        avgCloseTimePRTrend,
+        "avg_close_time"
+      )}\n  - \`Median: ${medCloseTimePullRequest}\` ${addTrailingEmojis(medClosePRTrend, "median_close_time")}`,
+    };
+
+    const pullRequestNumComments = {
+      content: `- *Number of comments* before close:\n  - \`Average: ${avgCommPR}\` ${addTrailingEmojis(
+        avgCommPRTrend,
+        "avg_comments_before_close"
+      )}\n  - \`Median: ${medCommPR}\` ${addTrailingEmojis(medCommPRTrend, "median_comments_before_close")}`,
+    };
+
+    const pullRequest0Comments = {
+      content: `- Pull requests closed with 0 comments = \`${pullRequest0Comm}\` ${addTrailingEmojis(
+        pullRequest0CommTrend,
+        "num_closed_0_comments"
+      )}`,
+    };
+    const pullRequestButtons = {
+      content: "",
+      components: [
+        (() => {
+          const possibleButtons = new ActionRowBuilder();
+          possibleButtons.addComponents(seeEmbedButton("closed_pull_request_stats", "pull_requests"));
+          return possibleButtons;
+        })(),
+      ],
+    };
+
+    const section = [closeActivityTitle, numClosedIssues];
+    if (isRelevantTrend(avgCloseTimeIssueTrend) || isRelevantTrend(medCloseTimeIssueTrend)) {
+      section.push(issueCloseTime);
+    }
+    if (isRelevantTrend(avgCommIssueTrend) || isRelevantTrend(medCommIssueTrend)) {
+      section.push(issueNumComments);
+    }
+    if (isRelevantTrend(issue0CommTrend)) {
+      section.push(issue0Comments);
+    }
+    if (issueButtons.components[0].components.length === 0) {
+      issueButtons.components = null;
+    } else {
+      section.push(issueButtons);
+    }
+    section.push(numClosedPullRequests);
+    if (isRelevantTrend(avgCloseTimePRTrend) || isRelevantTrend(medCommPRTrend)) {
+      section.push(pullRequestCloseTime);
+    }
+    if (isRelevantTrend(avgCommPRTrend) || isRelevantTrend(medCommPRTrend)) {
+      section.push(pullRequestNumComments);
+    }
+    if (isRelevantTrend(pullRequest0CommTrend)) {
+      section.push(pullRequest0Comments);
+    }
+    if (pullRequestButtons.components[0].components.length === 0) {
+      pullRequestButtons.components = null;
+    } else {
+      section.push(pullRequestButtons);
+    }
+
+    return section;
   }
 
-  const closeActivity = `
-  > ## Close Activity
-  ${Object.values(closeActivityMetrics).join("\n")}
-  `
+  const openActivityMetricTrends = {
+    "num_opened-issues": metricTrends["delta_num_opened"]["issues"],
+    "num_opened-pull_requests": metricTrends["delta_num_opened"]["pull_requests"],
+    "avg_recent_comments-issues": metricTrends["delta_avg_recent_comments"]["issues"],
+    "avg_recent_comments-pull_requests": metricTrends["delta_avg_recent_comments"]["pull_requests"],
+    "median_recent_comments-issues": metricTrends["delta_median_recent_comments"]["issues"],
+    "median_recent_comments-pull_requests": metricTrends["delta_median_recent_comments"]["pull_requests"],
+  };
 
+  function openActivitySection() {
+    const issueCount = currentMetrics["num_opened"]["issues"];
+    const issueTrend = openActivityMetricTrends["num_opened-issues"];
+    const pullRequestCount = currentMetrics["num_opened"]["pull_requests"];
+    const pullRequestTrend = openActivityMetricTrends["num_opened-pull_requests"];
+    const avgCommIssue = currentMetrics["avg_recent_comments"]["issues"].toFixed(3);
+    const avgCommIssueTrend = openActivityMetricTrends["avg_recent_comments-issues"];
+    const medCommIssue = currentMetrics["median_recent_comments"]["issues"].toFixed(3);
+    const medCommIssueTrend = openActivityMetricTrends["median_recent_comments-issues"];
+    const avgCommPR = currentMetrics["avg_recent_comments"]["pull_requests"].toFixed(3);
+    const avgCommPRTrend = openActivityMetricTrends["avg_recent_comments-pull_requests"];
+    const medCommPR = currentMetrics["median_recent_comments"]["pull_requests"].toFixed(3);
+    const medCommPRTrend = openActivityMetricTrends["median_recent_comments-pull_requests"];
 
-  const messageBlocks = [reportTitle, community, closeActivity];
-  return messageBlocks;
+    const openActivityTitle = { content: "## Open Activity" };
+
+    const numOpenedIssues = {
+      content:
+        "### `" +
+        issueCount +
+        "` ISSUE" +
+        (issueCount != 1 ? "S were" : " was") +
+        " opened " +
+        addTrailingEmojis(issueTrend, "num_opened"),
+    };
+    const issueNumComments = {
+      content: `- *Number of Comments*:\n  - \`Average: ${avgCommIssue}\` ${addTrailingEmojis(
+        avgCommIssueTrend,
+        "avg_recent_comments"
+      )}\n  - \`Median: ${medCommIssue}\` ${addTrailingEmojis(medCommIssueTrend, "median_recent_comments")}`,
+    };
+    const issueButtons = {
+      content: "",
+      components: [
+        (() => {
+          const possibleButtons = new ActionRowBuilder();
+          possibleButtons.addComponents(seeEmbedButton("opened_issue_stats", "issues"));
+          return possibleButtons;
+        })(),
+      ],
+    };
+    const numOpenedPullRequests = {
+      content:
+        "### `" +
+        pullRequestCount +
+        "` PULL REQUEST" +
+        (pullRequestCount != 1 ? "S were" : " was") +
+        " opened " +
+        addTrailingEmojis(pullRequestTrend, "num_opened"),
+    };
+    const pullRequestNumComments = {
+      content: `- *Number of Comments*:\n  - \`Average: ${avgCommPR}\` ${addTrailingEmojis(
+        avgCommPRTrend,
+        "avg_recent_comments"
+      )}\n  - \`Median: ${medCommPR}\` ${addTrailingEmojis(medCommPRTrend, "median_recent_comments")}`,
+    };
+    const pullRequestButtons = {
+      content: "",
+      components: [
+        (() => {
+          const possibleButtons = new ActionRowBuilder();
+          possibleButtons.addComponents(seeEmbedButton("opened_pull_request_stats", "pull_requests"));
+          return possibleButtons;
+        })(),
+      ],
+    };
+    const section = [openActivityTitle, numOpenedIssues];
+    if (isRelevantTrend(avgCommIssueTrend) || isRelevantTrend(medCommIssueTrend)) {
+      section.push(issueNumComments);
+    }
+    if (issueButtons.components[0].components.length === 0) {
+      issueButtons.components = null;
+    } else {
+      section.push(issueButtons);
+    }
+    section.push(numOpenedPullRequests);
+    if (isRelevantTrend(avgCommPRTrend) || isRelevantTrend(medCommPRTrend)) {
+      section.push(pullRequestNumComments);
+    }
+    if (pullRequestButtons.components[0].components.length === 0) {
+      pullRequestButtons.components = null;
+    } else {
+      section.push(pullRequestButtons);
+    }
+    return section;
+  }
+
+  function conversationQualitySection() {
+    const issueCount = currentMetrics["num_toxic_convos"]["issues"];
+    const issueTrend = metricTrends["delta_num_toxic_convos"]["issues"];
+    const pullRequestCount = currentMetrics["num_toxic_convos"]["pull_requests"];
+    const pullRequestTrend = metricTrends["delta_num_toxic_convos"]["pull_requests"];
+
+    const conversationQualityTitle = { content: "## Conversation Quality" };
+    const toxicConvosTitle = {
+      content:
+        "### Toxic Conversations\n" +
+        "*Toxic conversations contain at least one comment that Google's [Perspective Comment Analyzer API](https://perspectiveapi.com/) scored as toxic, based on your selected threshold.*",
+    };
+
+    const toxicConvosIssues = {
+      content:
+        "- **`" +
+        issueCount +
+        "` ISSUE" +
+        (issueCount != 1 ? "S" : "") +
+        " had" +
+        (issueCount != 1 ? " " : " a ") +
+        "`toxic` conversation" +
+        (issueCount != 1 ? "s" : "") +
+        "** " +
+        addTrailingEmojis(issueTrend, "num_toxic_convos"),
+    };
+
+    const toxicConvosPullRequests = {
+      content:
+        "- **`" +
+        pullRequestCount +
+        "` PULL REQUEST" +
+        (pullRequestCount != 1 ? "S" : "") +
+        " had" +
+        (pullRequestCount != 1 ? " " : " a ") +
+        "`toxic` conversation" +
+        (pullRequestCount != 1 ? "s" : "") +
+        "** " +
+        addTrailingEmojis(pullRequestTrend, "num_toxic_convos"),
+    };
+    const toxicConvosButtons = {
+      content: "",
+      components: [
+        (() => {
+          const possibleButtons = new ActionRowBuilder();
+          if (issueCount > 0 || pullRequestCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("all_toxic_convos", ""));
+          }
+          if (issueCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("toxic_issue_convos", "issues"));
+          }
+          if (pullRequestCount > 0) {
+            possibleButtons.addComponents(seeEmbedButton("toxic_pull_request_convos", "pull_requests"));
+          }
+
+          return possibleButtons;
+        })(),
+      ],
+    };
+
+    const comingSoonTitle = { content: "### More *Perspective* Metrics Coming Soon!" };
+
+    const section = [conversationQualityTitle, toxicConvosTitle];
+    if (isRelevantTrend(issueTrend)) {
+      section.push(toxicConvosIssues);
+    }
+    if (isRelevantTrend(pullRequestTrend)) {
+      console.log("is relevant trend", pullRequestTrend);
+      section.push(toxicConvosPullRequests);
+    }
+    if (toxicConvosButtons.components[0].components.length === 0) {
+      toxicConvosButtons.components = null;
+      section.push({ content: "- `No toxic conversations 🎊`" });
+    } else {
+      section.push(toxicConvosButtons);
+    }
+
+    section.push(comingSoonTitle);
+
+    return section;
+  }
+
+  const sections = [
+    { content: "================================" },
+    { content: reportTitle },
+    { content: "================================" },
+    ...communitySection(),
+    { content: "--------------------------------" },
+    ...closeActivitySection(),
+    { content: "--------------------------------" },
+    ...openActivitySection(),
+    { content: "--------------------------------" },
+    ...conversationQualitySection(),
+    { content: "================================" },
+  ];
+  return sections;
 }
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+  // console.log("interaction components", interaction.message.components);
+
+  const [action, content, discType] = interaction.customId.split(":");
+  const guildId = interaction.guild.id;
+  console.log("guildId...", guildId);
+
+  if (action === "reveal_embed") {
+    console.log("here????");
+    const updatedButtonComponents = interaction.message.components[0].components.map((button) => ({
+      content: button.customId.split(":")[1],
+      discType: button.customId.split(":")[2],
+    }));
+    const updatedButtonRow = new ActionRowBuilder().addComponents(
+      updatedButtonComponents.map((button) =>
+        button.content === content
+          ? hideEmbedButton(button.content, button.discType)
+          : seeEmbedButton(button.content, button.discType)
+      )
+    );
+    await interaction.update({
+      embeds: [infoEmbed(guildId, content, discType)],
+      ephemeral: true, // Optional: make it visible only to the user
+      components: [updatedButtonRow],
+    });
+
+    // Acknowledge the interaction (required!)
+    // await interaction.deferUpdate();
+  }
+  if (action === "hide_embed") {
+    const updatedButtonComponents = interaction.message.components[0].components.map((button) => ({
+      content: button.customId.split(":")[1],
+      discType: button.customId.split(":")[2],
+    }));
+    const updatedButtonRow = new ActionRowBuilder().addComponents(
+      updatedButtonComponents.map((button) => seeEmbedButton(button.content, button.discType))
+    );
+
+    await interaction.update({
+      embeds: [],
+      ephemeral: true, // Optional: make it visible only to the user
+      components: [updatedButtonRow],
+    });
+  }
+});

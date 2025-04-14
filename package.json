@@ -17,6 +17,7 @@
   "license": "MIT",
   "dependencies": {
     "@octokit/rest": "^21.1.1",
+    "asyncio": "^0.0.2",
     "axios": "^1.8.4",
     "dayjs": "^1.11.13",
     "discord-interactions": "^4.0.0",
