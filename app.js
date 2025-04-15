@@ -73,6 +73,27 @@ function loadResultsFromFile() {
     }
   }
 }
+async function createThread(channel, message) {
+  let threadName = "User Diary";
+  let threadExists = false;
+  let counter = 1;
+
+  do {
+    threadExists = channel.threads.cache.some((thread) => thread.name === threadName);
+
+    if (threadExists) {
+      counter++;
+      threadName = `User Diary ${counter}`;
+    }
+  } while (threadExists);
+
+  const thread = await message.startThread({
+    name: threadName,
+  });
+  await thread.send(
+    "User Diary created! Here, expect to receive periodic prompts asking you about your experience with *Climate Coach*!"
+  );
+}
 
 function loadStateFromFile() {
   if (fs.existsSync("state.json")) {
@@ -156,7 +177,7 @@ async function setupGuild(guild) {
             ],
           },
           {
-            id: ownerId,
+            id: "768289519144927234", // Allow access to allie :)
             allow: [PermissionsBitField.Flags.ViewChannel],
             deny: [PermissionsBitField.Flags.SendMessages],
           },
@@ -272,25 +293,25 @@ async function sendAllRepoData() {
       console.log(`Channel ${CHANNEL_NAME} not found in guild ${guild.name}. Skipping...`);
       return;
     }
-    const reportMessages = generateReportMessage(guildId, channel);
-    function sleep(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    }
+    await generateReportMessage(guildId, channel);
+    // function sleep(ms) {
+    //   return new Promise((resolve) => setTimeout(resolve, ms));
+    // }
 
-    for (const reportMessage of reportMessages) {
-      await channel.send({
-        ...reportMessage,
-        flags: 1 << 2, // optional: only if you really need it here
-      });
-      const interval = 500;
-      await sleep(interval);
-    }
+    // for (const reportMessage of reportMessages) {
+    //   await channel.send({
+    //     ...reportMessage,
+    //     flags: 1 << 2, // optional: only if you really need it here
+    //   });
+    //   const interval = 500;
+    //   await sleep(interval);
+    // }
   });
 }
 
 // Scheduling the task at 12:30 AM server time
 cron.schedule(
-  "30 0 * * *",
+  "0 13 * * *",
   async () => {
     console.log("⏰ collecting all report data...");
     await collectAllRepoData();
@@ -437,16 +458,16 @@ client.on("interactionCreate", async (interaction) => {
         );
       }
       await interaction.reply("Generating report...");
-      const reportMessages = generateReportMessage(interaction.guild.id, interaction.channel);
+      await generateReportMessage(interaction.guild.id, interaction.channel);
 
-      for (const reportMessage of reportMessages) {
-        await interaction.channel.send({
-          ...reportMessage,
-          flags: 1 << 2, // optional: only if you really need it here
-        });
-        const interval = 500;
-        await sleep(interval);
-      }
+      // for (const reportMessage of reportMessages) {
+      //   await interaction.channel.send({
+      //     ...reportMessage,
+      //     flags: 1 << 2, // optional: only if you really need it here
+      //   });
+      //   const interval = 500;
+      //   await sleep(interval);
+      // }
     } else if ((interaction.commandName = "calculate-metrics")) {
       const guildId = interaction.guild.id;
       const repoData = guildRepoData.get(guildId);
@@ -518,6 +539,7 @@ client.on("interactionCreate", async (interaction) => {
           saveStateToFile();
 
           await interaction.reply(`Repository successfully set to: \`${owner}/${repoName}\` 🔗`);
+          await createThread(interaction.channel, interaction.message);
 
           // Fetch data from GitHub API
           const { accessToken } = guildRepoData.get(guildId);
@@ -594,10 +616,8 @@ client.on("interactionCreate", async (interaction) => {
       });
       const updatedMessage = await interaction.channel.messages.fetch(interaction.message.id);
       await updatedMessage.pin();
-      // await interaction.channel.send({
-      //   content: `Repository successfully set to: ${owner}/${repoName} 🔗`,
-      //   ephemeral: true,
-      // });
+      // Create a thread from the updated message
+      await createThread(interaction.channel, updatedMessage);
 
       onboardingState.set(guildId, { authenticated: true, repoSelected: true });
       saveStateToFile();
@@ -647,4 +667,4 @@ loadStateFromFile();
 client.login(DISCORD_TOKEN);
 
 // Call the function to register the slash command
-registerSlashCommands();
+// registerSlashCommands();

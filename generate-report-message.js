@@ -11,7 +11,29 @@ import { getMetricTrends } from "./get-metric-trends.js";
 import { addTrailingEmojis } from "./emojis.js";
 import { infoEmbed } from "./embed.js";
 import { loadResultsFromFile, capitalizeWords, formatDate, plural } from "./helpers.js";
+import { upsertRow } from "./google-sheets.js";
+import fs from "fs";
 
+let guildRepoData = new Map();
+let reportMessageIds = new Map(); // guildId =? reportMessageId
+
+export function loadGuildRepoDataFromFile() {
+  if (fs.existsSync("state.json")) {
+    const content = fs.readFileSync("state.json", "utf-8").trim();
+
+    if (!content) {
+      console.log("📂 State file is empty. Initializing with empty maps.");
+      return;
+    }
+    const data = JSON.parse(content);
+
+    guildRepoData = new Map(Object.entries(data?.guildRepoData || {}));
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 const seeEmbedButton = (content, discType) => {
   const contentNameFormatted = capitalizeWords(content.replace(/_/g, " "));
   return new ButtonBuilder()
@@ -36,9 +58,12 @@ function isRelevantTrend(trend) {
   return Math.abs(Math.abs(trend) - 1) >= 0.2;
 }
 
-export function generateReportMessage(guildId, channel) {
-  // const lastMetrics = guildLastMetrics.get(guildId);
-  // const currentMetrics = guildCurrentMetrics.get(guildId);
+let communitySection = new Map();
+let closeActivitySection = new Map();
+let openActivitySection = new Map();
+let conversationQualitySection = new Map();
+
+export async function generateReportMessage(guildId, channel) {
   const { lastMetrics, currentMetrics } = loadResultsFromFile(guildId);
   const metricTrends = getMetricTrends(lastMetrics, currentMetrics);
 
@@ -87,7 +112,7 @@ export function generateReportMessage(guildId, channel) {
   const firstActionRow = new ActionRowBuilder().addComponents(infoInput);
   modal.addComponents(firstActionRow);
 
-  function communitySection() {
+  communitySection.set(guildId, () => {
     const issueCount = currentMetrics["num_unique_authors"]["issues"];
     const issueTrend = communityTrends["num_unique_authors-issues"];
     const issueNewCount = currentMetrics["num_new_authors"]["issues"];
@@ -171,9 +196,9 @@ export function generateReportMessage(guildId, channel) {
     const section = [communityTitle, activeIssueContributors, activePullRequestContributors];
 
     return section;
-  }
+  });
 
-  function closeActivitySection() {
+  closeActivitySection.set(guildId, () => {
     const issueCount = currentMetrics["num_closed"]["issues"];
     const issueTrend = closeActivityMetricTrends["num_closed-issues"];
     const issue0Comm = currentMetrics["num_closed_0_comments"]["issues"];
@@ -323,7 +348,7 @@ export function generateReportMessage(guildId, channel) {
     }
 
     return section;
-  }
+  });
 
   const openActivityMetricTrends = {
     "num_opened-issues": metricTrends["delta_num_opened"]["issues"],
@@ -335,7 +360,7 @@ export function generateReportMessage(guildId, channel) {
       metricTrends["delta_median_recent_comments"]["pull_requests"],
   };
 
-  function openActivitySection() {
+  openActivitySection.set(guildId, () => {
     const issueCount = currentMetrics["num_opened"]["issues"];
     const issueTrend = openActivityMetricTrends["num_opened-issues"];
     const pullRequestCount = currentMetrics["num_opened"]["pull_requests"];
@@ -422,9 +447,9 @@ export function generateReportMessage(guildId, channel) {
       section.push(pullRequestButtons);
     }
     return section;
-  }
+  });
 
-  function conversationQualitySection() {
+  conversationQualitySection.set(guildId, () => {
     const issueCount = currentMetrics["num_toxic_convos"]["issues"];
     const issueTrend = metricTrends["delta_num_toxic_convos"]["issues"];
     const pullRequestCount = currentMetrics["num_toxic_convos"]["pull_requests"];
@@ -506,41 +531,39 @@ export function generateReportMessage(guildId, channel) {
     section.push(comingSoonTitle);
 
     return section;
-  }
+  });
 
-  const twentyFourHours = 24 * 60 * 60 * 1000;
-  const shouldShowButton = Date.now() - lastMetrics["end"] < twentyFourHours;
-
-  const sections = [
+  // console.log("calculation = ", Date.now() - new Date(lastMetrics["end"]));
+  const titleSection = [
     { content: "================================" },
     {
       content: reportTitle,
-      components: shouldShowButton
-        ? [new ActionRowBuilder().addComponents(new ButtonBuilder().addLabel("Open Report"))]
-        : null,
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel("Open Report")
+            .setCustomId("open_report")
+            .setStyle(ButtonStyle.Primary)
+        ),
+      ],
     },
     { content: "================================" },
-    ...communitySection(),
-    { content: "--------------------------------" },
-    ...closeActivitySection(),
-    { content: "--------------------------------" },
-    ...openActivitySection(),
-    { content: "--------------------------------" },
-    ...conversationQualitySection(),
-    { content: "================================" },
   ];
-  return sections;
+  for (const message of titleSection) {
+    await channel.send({ ...message, flags: 1 << 2 });
+  }
 }
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
+  if (!(interaction.isButton() || interaction.isModalSubmit())) return;
   // console.log("interaction components", interaction.message.components);
 
   const [action, content, discType] = interaction.customId.split(":");
   const guildId = interaction.guild.id;
 
   if (action === "reveal_embed") {
-    console.log("here????");
+    console.log("interaction???");
+    await interaction.deferReply({ ephemeral: true });
     const updatedButtonComponents = interaction.message.components[0].components.map((button) => ({
       content: button.customId.split(":")[1],
       discType: button.customId.split(":")[2],
@@ -552,14 +575,12 @@ client.on("interactionCreate", async (interaction) => {
           : seeEmbedButton(button.content, button.discType)
       )
     );
-    await interaction.update({
+    console.log("Embed content:", infoEmbed(guildId, content, discType));
+    await interaction.editReply({
       embeds: [infoEmbed(guildId, content, discType)],
-      ephemeral: true, // Optional: make it visible only to the user
+      // ephemeral: true, // Optional: make it visible only to the user
       components: [updatedButtonRow],
     });
-
-    // Acknowledge the interaction (required!)
-    // await interaction.deferUpdate();
   }
   if (action === "hide_embed") {
     const updatedButtonComponents = interaction.message.components[0].components.map((button) => ({
@@ -574,6 +595,319 @@ client.on("interactionCreate", async (interaction) => {
       embeds: [],
       ephemeral: true, // Optional: make it visible only to the user
       components: [updatedButtonRow],
+    });
+  }
+
+  if (interaction.customId === "open_report") {
+    const interactionText = interaction.message.content.replace(/# /g, "");
+
+    const interactionUrl = interaction.message.url;
+    console.log("interactionText", interactionText);
+    console.log("interactionUrl", interactionUrl);
+    const channel = interaction.channel;
+    const guildId = interaction.guild.id;
+    const sections = [
+      ...communitySection.get(guildId)(),
+      { content: "--------------------------------" },
+      ...closeActivitySection.get(guildId)(),
+      { content: "--------------------------------" },
+      ...openActivitySection.get(guildId)(),
+      { content: "--------------------------------" },
+      ...conversationQualitySection.get(guildId)(),
+      { content: "================================" },
+    ];
+    await interaction.update({
+      components: [],
+    });
+    for (const message of sections) {
+      await channel.send({ ...message, flags: 1 << 2 });
+      await sleep(600);
+    }
+
+    // Start a 3-minute timer (180000 ms)
+    setTimeout(async () => {
+      try {
+        // Find an existing thread by name (adjust to your use case)
+        const threads = await channel.threads.fetchActive();
+        const thread = threads.threads
+          .filter((t) => t.name.startsWith("User Diary"))
+          .reduce((highest, current) => {
+            const currentNumber = parseInt(current.name.split(" ").pop(), 10);
+            const highestNumber = highest ? parseInt(highest.name.split(" ").pop(), 10) : NaN;
+
+            if (isNaN(currentNumber)) return highest || current;
+            if (isNaN(highestNumber) || currentNumber > highestNumber) return current;
+
+            return highest;
+          }, null);
+
+        if (!thread) {
+          console.warn("🧵 Thread 'User Diary' not found.");
+          return;
+        }
+        const reportMessage = await thread.send({
+          content: `## Hi, <@${interaction.user.id}>! You recently viewed the report [${interactionText}](${interactionUrl}).\nIn the last few minutes...`,
+        });
+
+        loadGuildRepoDataFromFile();
+        const thisGuildRepoData = guildRepoData.get(guildId);
+        console.log("thisGuildRepoData", thisGuildRepoData);
+        const guildRepoUrl = `https://github.com/${thisGuildRepoData.owner}/${thisGuildRepoData.repoName}`;
+        // add a row to the google spreadsheet with the guildID, discord user id, and the report message ID
+        await upsertRow(guildId, reportMessage.id, {
+          "Server Name": interaction.guild.name,
+          "Discord User": interaction.user.username,
+          "Repo URL": guildRepoUrl,
+        });
+        reportMessageIds.set(guildId, reportMessage.id);
+        await thread.send({
+          content:
+            "### Did you click on any buttons in the report?\n For example, `See All Contributor Stats`",
+          components: [
+            new ActionRowBuilder().addComponents([
+              new ButtonBuilder()
+                .setLabel("Yes")
+                .setCustomId("yes_buttons")
+                .setStyle(ButtonStyle.Secondary),
+              new ButtonBuilder()
+                .setLabel("No")
+                .setCustomId("no_buttons")
+                .setStyle(ButtonStyle.Secondary),
+            ]),
+          ],
+        });
+        await thread.send({
+          content:
+            "### Did you click on any links in the report?\n*(Links look like [this](https://www.google.com))*",
+          components: [
+            new ActionRowBuilder().addComponents([
+              new ButtonBuilder()
+                .setLabel("Yes")
+                .setCustomId("yes_links")
+                .setStyle(ButtonStyle.Secondary),
+              new ButtonBuilder()
+                .setLabel("No")
+                .setCustomId("no_links")
+                .setStyle(ButtonStyle.Secondary),
+            ]),
+          ],
+        });
+        await thread.send({
+          content:
+            "### Did you perform any other actions as a result of viewing the report?\n*(For instance, navigating to your repo, merging a PR, writing a comment, etc.)*",
+          components: [
+            new ActionRowBuilder().addComponents([
+              new ButtonBuilder()
+                .setLabel("Yes")
+                .setCustomId("yes_actions")
+                .setStyle(ButtonStyle.Secondary),
+              new ButtonBuilder()
+                .setLabel("No")
+                .setCustomId("no_actions")
+                .setStyle(ButtonStyle.Secondary),
+            ]),
+          ],
+        });
+      } catch (error) {
+        console.error("❌ Error sending message to thread:", error);
+      }
+    }, 180000); // 180000 = 3 minutes
+  } else if (interaction.customId === "yes_buttons") {
+    const reportMessageId = reportMessageIds.get(interaction.guild.id);
+    console.log("reportMessageId..", reportMessageId);
+    await upsertRow(guildId, reportMessageId, {
+      "Did you click on any buttons in the report?": "Yes",
+    });
+    await interaction.update({
+      content: interaction.message.content + "\n```Yes```\nWhich buttons did you click?\n```\n ```",
+      components: [
+        new ActionRowBuilder().addComponents([
+          new ButtonBuilder()
+            .setLabel("Enter Response")
+            .setCustomId("enter_response_buttons")
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setLabel("I did not click any buttons")
+            .setCustomId("no_buttons")
+            .setStyle(ButtonStyle.Secondary),
+        ]),
+      ],
+    });
+  } else if (interaction.customId === "no_buttons") {
+    const reportMessageId = reportMessageIds.get(interaction.guild.id);
+    await upsertRow(guildId, reportMessageId, {
+      "Did you click on any buttons in the report?": "No",
+      "Which buttons did you click?": "N/A",
+    });
+    const initialQuestion = interaction.message.content.split("\n")[0];
+    await interaction.update({
+      content: initialQuestion,
+      components: [
+        new ActionRowBuilder().addComponents([
+          new ButtonBuilder()
+            .setLabel("Yes")
+            .setCustomId("yes_buttons")
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setLabel("No")
+            .setCustomId("no_buttons")
+            .setStyle(ButtonStyle.Primary),
+        ]),
+      ],
+    });
+  } else if (interaction.customId === "yes_links") {
+    const reportMessageId = reportMessageIds.get(interaction.guild.id);
+    await upsertRow(guildId, reportMessageId, {
+      "Did you click on any links in the report?": "Yes",
+    });
+    await interaction.update({
+      content: interaction.message.content + "\n```Yes```\nWhich links did you click?\n```\n ```",
+      components: [
+        new ActionRowBuilder().addComponents([
+          new ButtonBuilder()
+            .setLabel("Enter Response")
+            .setCustomId("enter_response_links")
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setLabel("I did not click on any links")
+            .setCustomId("no_links")
+            .setStyle(ButtonStyle.Secondary),
+        ]),
+      ],
+    });
+  } else if (interaction.customId === "no_links") {
+    const reportMessageId = reportMessageIds.get(interaction.guild.id);
+    await upsertRow(guildId, reportMessageId, {
+      "Did you click on any links in the report?": "No",
+      "Which links did you click?": "N/A",
+    });
+    const initialQuestion = interaction.message.content.split("\n").slice(0, 2).join("\n");
+    await interaction.update({
+      content: initialQuestion,
+      components: [
+        new ActionRowBuilder().addComponents([
+          new ButtonBuilder()
+            .setLabel("Yes")
+            .setCustomId("yes_links")
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setLabel("No").setCustomId("no_links").setStyle(ButtonStyle.Primary),
+        ]),
+      ],
+    });
+  } else if (interaction.customId === "yes_actions") {
+    const reportMessageId = reportMessageIds.get(interaction.guild.id);
+    await upsertRow(guildId, reportMessageId, {
+      "Did you perform any other actions as a result of viewing the report?": "Yes",
+    });
+    await interaction.update({
+      content:
+        interaction.message.content + "\n```Yes```\nWhat other actions did you take?\n```\n ```",
+      components: [
+        new ActionRowBuilder().addComponents([
+          new ButtonBuilder()
+            .setLabel("Enter Response")
+            .setCustomId("enter_response_actions")
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setLabel("I did not perform any additional actions")
+            .setCustomId("no_actions")
+            .setStyle(ButtonStyle.Secondary),
+        ]),
+      ],
+    });
+  } else if (interaction.customId === "no_actions") {
+    const reportMessageId = reportMessageIds.get(interaction.guild.id);
+    await upsertRow(guildId, reportMessageId, {
+      "Did you perform any other actions as a result of viewing the report?": "No",
+      "What other actions did you take?": "N/A",
+    });
+    const initialQuestion = interaction.message.content.split("\n").slice(0, 2).join("\n");
+    await interaction.update({
+      content: initialQuestion,
+      components: [
+        new ActionRowBuilder().addComponents([
+          new ButtonBuilder()
+            .setLabel("Yes")
+            .setCustomId("yes_actions")
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setLabel("No")
+            .setCustomId("no_actions")
+            .setStyle(ButtonStyle.Primary),
+        ]),
+      ],
+    });
+  } else if (interaction.customId.includes("enter_response")) {
+    const followUpQuestion = interaction.message.content.split("\n")[3];
+
+    let question = "buttons";
+    if (interaction.customId.includes("links")) {
+      question = "links";
+    } else if (interaction.customId.includes("actions")) {
+      question = "actions";
+    } else {
+    }
+    await interaction.showModal(
+      new ModalBuilder()
+        .setCustomId(`user_input_modal:${question}`)
+        // .setTitle("Please Provide Your Input")
+        .setTitle("Diary Input")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("input_field")
+              .setLabel(followUpQuestion)
+              .setStyle(TextInputStyle.Paragraph)
+              .setPlaceholder(
+                question != "actions"
+                  ? `Don't worry about matching the ${
+                      question === "buttons" ? "button name(s)" : "link text"
+                    } exactly`
+                  : `Enter any/all actions you took.`
+              )
+              .setRequired(true)
+          )
+        )
+    );
+  } else if (interaction.customId.includes("user_input_modal")) {
+    const userInput = interaction.fields.getTextInputValue("input_field");
+    console.log("User input:", userInput);
+    const question = interaction.customId.split(":")[1];
+    console.log("question ->", question);
+    const reportMessageId = reportMessageIds.get(interaction.guild.id);
+
+    if (interaction.customId.includes("buttons")) {
+      await upsertRow(guildId, reportMessageIds.get(interaction.guild.id), {
+        "Which buttons did you click?": userInput,
+      });
+    } else if (interaction.customId.includes("links")) {
+      await upsertRow(guildId, reportMessageId, {
+        "Which links did you click?": userInput,
+      });
+    } else if (interaction.customId.includes("actions")) {
+      await upsertRow(guildId, reportMessageId, {
+        "What other actions did you take?": userInput,
+      });
+    }
+    const contentBeforeInput = interaction.message.content.split("\n").slice(0, 3).join("\n");
+    await interaction.update({
+      content: `${contentBeforeInput}\n\`\`\`${userInput}\`\`\``,
+      components: [
+        new ActionRowBuilder().addComponents([
+          new ButtonBuilder()
+            .setLabel("Edit Response")
+            .setCustomId(`enter_response_${question}`)
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setLabel(
+              ["buttons", "links"].includes(question)
+                ? `I did not click any ${question}`
+                : `I did not perform any additional ${question}`
+            )
+            .setCustomId(`no_${question}`)
+            .setStyle(ButtonStyle.Secondary),
+        ]),
+      ],
     });
   }
 });
