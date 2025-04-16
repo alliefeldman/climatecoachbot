@@ -233,8 +233,6 @@ async function setupGuild(guild) {
     const welcomeMessage = await channel.messages.fetch(welcomeMessageId);
     if (welcomeMessage && onboardingState.get(guildId)?.authenticated === true) {
       await welcomeMessage.edit("Authentication successful! 🎉");
-    } else {
-      console.error("Failed to fetch the message.");
     }
     let selectRepoMessage;
     if (
@@ -311,7 +309,7 @@ async function sendAllRepoData() {
 
 // Scheduling the task at 12:30 AM server time
 cron.schedule(
-  "0 13 * * *",
+  "30 0 * * *",
   async () => {
     console.log("⏰ collecting all report data...");
     await collectAllRepoData();
@@ -538,8 +536,20 @@ client.on("interactionCreate", async (interaction) => {
           onboardingState.set(guildId, { authenticated: true, repoSelected: true });
           saveStateToFile();
 
-          await interaction.reply(`Repository successfully set to: \`${owner}/${repoName}\` 🔗`);
+          await interaction.reply(
+            `Repository successfully set to: \`${owner}/${repoName}\` 🔗\nExpect your first report in the next 30-45 minutes...`
+          );
           await createThread(interaction.channel, interaction.message);
+
+          const lastMetrics = await calculateMetrics(owner, repoName, "week", 1);
+          const currentMetrics = await calculateMetrics(owner, repoName, "week", 0);
+          loadResultsFromFile();
+          saveResultsToFile(guildId, lastMetrics, currentMetrics);
+          console.log("Metrics calculated and saved!");
+
+          setTimeout(async () => {
+            await generateReportMessage(guildId, interaction.channel);
+          }, 30 * 60 * 1000); // Wait for 30 minutes before sending the report
 
           // Fetch data from GitHub API
           const { accessToken } = guildRepoData.get(guildId);

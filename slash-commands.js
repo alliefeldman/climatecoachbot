@@ -32,7 +32,7 @@ const commandPayloads = [
     description: "Configure a few bot settings for your server",
     options: [
       {
-        name: "authenticate",
+        name: "github",
         description: "Authenticate the bot with your GitHub account",
         type: 1, // SUB_COMMAND (no extra options)
       },
@@ -62,6 +62,7 @@ const commandPayloads = [
           },
         ],
       },
+     
     ],
   },
   {

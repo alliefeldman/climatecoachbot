@@ -562,8 +562,9 @@ client.on("interactionCreate", async (interaction) => {
   const guildId = interaction.guild.id;
 
   if (action === "reveal_embed") {
-    console.log("interaction???");
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferUpdate();
+    const embed = infoEmbed(guildId, content, discType);
+
     const updatedButtonComponents = interaction.message.components[0].components.map((button) => ({
       content: button.customId.split(":")[1],
       discType: button.customId.split(":")[2],
@@ -575,14 +576,15 @@ client.on("interactionCreate", async (interaction) => {
           : seeEmbedButton(button.content, button.discType)
       )
     );
-    console.log("Embed content:", infoEmbed(guildId, content, discType));
-    await interaction.editReply({
-      embeds: [infoEmbed(guildId, content, discType)],
+
+    await interaction.message.edit({
+      embeds: [embed],
       // ephemeral: true, // Optional: make it visible only to the user
       components: [updatedButtonRow],
     });
   }
   if (action === "hide_embed") {
+    await interaction.deferUpdate();
     const updatedButtonComponents = interaction.message.components[0].components.map((button) => ({
       content: button.customId.split(":")[1],
       discType: button.customId.split(":")[2],
@@ -591,7 +593,7 @@ client.on("interactionCreate", async (interaction) => {
       updatedButtonComponents.map((button) => seeEmbedButton(button.content, button.discType))
     );
 
-    await interaction.update({
+    await interaction.message.edit({
       embeds: [],
       ephemeral: true, // Optional: make it visible only to the user
       components: [updatedButtonRow],
@@ -602,8 +604,6 @@ client.on("interactionCreate", async (interaction) => {
     const interactionText = interaction.message.content.replace(/# /g, "");
 
     const interactionUrl = interaction.message.url;
-    console.log("interactionText", interactionText);
-    console.log("interactionUrl", interactionUrl);
     const channel = interaction.channel;
     const guildId = interaction.guild.id;
     const sections = [
