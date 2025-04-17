@@ -651,10 +651,10 @@ client.on("interactionCreate", async (interaction) => {
 
         loadGuildRepoDataFromFile();
         const thisGuildRepoData = guildRepoData.get(guildId);
-        console.log("thisGuildRepoData", thisGuildRepoData);
         const guildRepoUrl = `https://github.com/${thisGuildRepoData.owner}/${thisGuildRepoData.repoName}`;
         // add a row to the google spreadsheet with the guildID, discord user id, and the report message ID
         await upsertRow(guildId, reportMessage.id, {
+          "Timestamp": new Date(),
           "Server Name": interaction.guild.name,
           "Discord User": interaction.user.username,
           "Repo URL": guildRepoUrl,
@@ -708,18 +708,31 @@ client.on("interactionCreate", async (interaction) => {
             ]),
           ],
         });
+        await thread.send({
+          content:
+            "### What other information would you have liked the bot to provide?\n*(If any)*\n```\n ```\n",
+          components: [
+            new ActionRowBuilder().addComponents([
+              new ButtonBuilder()
+                .setLabel("Enter Response")
+                .setCustomId("enter_response_other")
+                .setStyle(ButtonStyle.Secondary)
+              
+            ]),
+          ],
+        });
       } catch (error) {
         console.error("❌ Error sending message to thread:", error);
       }
-    }, 180000); // 180000 = 3 minutes
+    }, 500); // 180000 = 3 minutes
   } else if (interaction.customId === "yes_buttons") {
     const reportMessageId = reportMessageIds.get(interaction.guild.id);
-    console.log("reportMessageId..", reportMessageId);
     await upsertRow(guildId, reportMessageId, {
       "Did you click on any buttons in the report?": "Yes",
     });
     await interaction.update({
-      content: interaction.message.content + "\n```Yes```\nWhich buttons did you click?\n```\n ```",
+      content:
+        interaction.message.content + "\n```Yes```\nWhich buttons did you click & why\n```\n ```",
       components: [
         new ActionRowBuilder().addComponents([
           new ButtonBuilder()
@@ -737,7 +750,7 @@ client.on("interactionCreate", async (interaction) => {
     const reportMessageId = reportMessageIds.get(interaction.guild.id);
     await upsertRow(guildId, reportMessageId, {
       "Did you click on any buttons in the report?": "No",
-      "Which buttons did you click?": "N/A",
+      "Which buttons did you click & why?": "N/A",
     });
     const initialQuestion = interaction.message.content.split("\n")[0];
     await interaction.update({
@@ -761,7 +774,8 @@ client.on("interactionCreate", async (interaction) => {
       "Did you click on any links in the report?": "Yes",
     });
     await interaction.update({
-      content: interaction.message.content + "\n```Yes```\nWhich links did you click?\n```\n ```",
+      content:
+        interaction.message.content + "\n```Yes```\nWhich links did you click & why?\n```\n ```",
       components: [
         new ActionRowBuilder().addComponents([
           new ButtonBuilder()
@@ -779,7 +793,7 @@ client.on("interactionCreate", async (interaction) => {
     const reportMessageId = reportMessageIds.get(interaction.guild.id);
     await upsertRow(guildId, reportMessageId, {
       "Did you click on any links in the report?": "No",
-      "Which links did you click?": "N/A",
+      "Which links did you click & why?": "N/A",
     });
     const initialQuestion = interaction.message.content.split("\n").slice(0, 2).join("\n");
     await interaction.update({
@@ -801,7 +815,8 @@ client.on("interactionCreate", async (interaction) => {
     });
     await interaction.update({
       content:
-        interaction.message.content + "\n```Yes```\nWhat other actions did you take?\n```\n ```",
+        interaction.message.content +
+        "\n```Yes```\nWhat other actions did you take & why?\n```\n ```",
       components: [
         new ActionRowBuilder().addComponents([
           new ButtonBuilder()
@@ -819,7 +834,7 @@ client.on("interactionCreate", async (interaction) => {
     const reportMessageId = reportMessageIds.get(interaction.guild.id);
     await upsertRow(guildId, reportMessageId, {
       "Did you perform any other actions as a result of viewing the report?": "No",
-      "What other actions did you take?": "N/A",
+      "What other actions did you take & why?": "N/A",
     });
     const initialQuestion = interaction.message.content.split("\n").slice(0, 2).join("\n");
     await interaction.update({
@@ -845,7 +860,8 @@ client.on("interactionCreate", async (interaction) => {
       question = "links";
     } else if (interaction.customId.includes("actions")) {
       question = "actions";
-    } else {
+    } else if (interaction.customId.includes("other")) {
+      question = "other";
     }
     await interaction.showModal(
       new ModalBuilder()
@@ -856,14 +872,14 @@ client.on("interactionCreate", async (interaction) => {
           new ActionRowBuilder().addComponents(
             new TextInputBuilder()
               .setCustomId("input_field")
-              .setLabel(followUpQuestion)
+              .setLabel(question != "other" ? followUpQuestion : "Any other information?")
               .setStyle(TextInputStyle.Paragraph)
               .setPlaceholder(
-                question != "actions"
+                question == "links" || question == "buttons"
                   ? `Don't worry about matching the ${
                       question === "buttons" ? "button name(s)" : "link text"
                     } exactly`
-                  : `Enter any/all actions you took.`
+                  : question == "other" ? "" :`Enter any/all actions you took.`
               )
               .setRequired(true)
           )
@@ -878,36 +894,45 @@ client.on("interactionCreate", async (interaction) => {
 
     if (interaction.customId.includes("buttons")) {
       await upsertRow(guildId, reportMessageIds.get(interaction.guild.id), {
-        "Which buttons did you click?": userInput,
+        "Which buttons did you click & why?": userInput,
       });
     } else if (interaction.customId.includes("links")) {
       await upsertRow(guildId, reportMessageId, {
-        "Which links did you click?": userInput,
+        "Which links did you click & why?": userInput,
       });
     } else if (interaction.customId.includes("actions")) {
       await upsertRow(guildId, reportMessageId, {
-        "What other actions did you take?": userInput,
+        "What other actions did you take & why?": userInput,
+      });
+    } else if(interaction.customId.includes("other")) {
+      await upsertRow(guildId, reportMessageId, {
+        "What other information would you have liked the bot to provide?": userInput,
       });
     }
-    const contentBeforeInput = interaction.message.content.split("\n").slice(0, 3).join("\n");
+    
+    const contentBeforeInput = question != "other" ? interaction.message.content.split("\n").slice(0, 3).join("\n") : interaction.message.content.split("\n").slice(0, 2).join("\n");
+    const components = [
+      new ActionRowBuilder().addComponents([
+        new ButtonBuilder()
+          .setLabel("Edit Response")
+          .setCustomId(`enter_response_${question}`)
+          .setStyle(ButtonStyle.Secondary),
+       
+      ]),
+    ];
+    if (question !== "other") {
+      components[0].addComponents(new ButtonBuilder()
+      .setLabel(
+        ["buttons", "links"].includes(question)
+          ? `I did not click any ${question}`
+          : `I did not perform any additional ${question}`
+      )
+      .setCustomId(`no_${question}`)
+      .setStyle(ButtonStyle.Secondary))
+    }
     await interaction.update({
       content: `${contentBeforeInput}\n\`\`\`${userInput}\`\`\``,
-      components: [
-        new ActionRowBuilder().addComponents([
-          new ButtonBuilder()
-            .setLabel("Edit Response")
-            .setCustomId(`enter_response_${question}`)
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setLabel(
-              ["buttons", "links"].includes(question)
-                ? `I did not click any ${question}`
-                : `I did not perform any additional ${question}`
-            )
-            .setCustomId(`no_${question}`)
-            .setStyle(ButtonStyle.Secondary),
-        ]),
-      ],
+      components: components
     });
   }
 });

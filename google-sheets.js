@@ -8,13 +8,11 @@ const auth = new google.auth.GoogleAuth({
 export async function upsertRow(guildId, messageId, dataFields) {
   const client = await auth.getClient();
   const email = await auth.getCredentials();
-  console.log("Service Account Email:", email.client_email);
   const sheets = google.sheets({ version: "v4", auth });
   const spreadsheetId = "1GhhRSIc5Mre_6JL7sSUMRozMBCHjM537er5dtsfAq84";
   // const spreadsheetId = "1R0TTCT1N5_CUnY1E30BVBOuIaImqUt93Pz8U2Tb5oP8";
   const sheetName = "Live Results"; // adjust as needed
   const range = `${sheetName}!A1:Z`; // covers a broad range
-  console.log("range = ", range);
 
   // Step 1: Get current sheet data
   const response = await sheets.spreadsheets.values.get({
@@ -30,7 +28,6 @@ export async function upsertRow(guildId, messageId, dataFields) {
     guildId: headers.indexOf("Guild ID"),
     messageId: headers.indexOf("Message ID"),
   };
-  console.log("idindex:", idIndex);
 
   let rowIndex = -1;
   for (let i = 1; i < rows.length; i++) {

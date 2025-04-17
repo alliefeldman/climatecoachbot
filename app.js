@@ -150,10 +150,10 @@ async function setupGuild(guild) {
     const owner = await guild.fetchOwner();
     const ownerId = owner.user.id;
     try {
-      onboardingState.delete(channel.guild.id);
-      welcomeMessageIds.delete(channel.guild.id);
-      selectRepoMessageIds.delete(channel.guild.id);
-      stateGuildMap.delete(channel.guild.id);
+      onboardingState?.delete(channel.guild.id);
+      welcomeMessageIds?.delete(channel.guild.id);
+      selectRepoMessageIds?.delete(channel.guild.id);
+      stateGuildMap?.delete(channel.guild.id);
       saveStateToFile();
     } catch (err) {
       console.error(`Error re-setting up guild after channel deletion:`, err);
@@ -402,7 +402,7 @@ app.get("/callback", async (req, res) => {
       saveStateToFile();
     }
     if (!selectRepoMessageIds.has(guildId)) {
-      console.log("No select repo message found, sending a new one...");
+
       const selectRepoMessage = await channel.send(SELECT_REPO_MESSAGE);
       selectRepoMessageIds.set(guildId, selectRepoMessage.id);
       saveStateToFile();
@@ -599,7 +599,7 @@ client.on("interactionCreate", async (interaction) => {
 
   if (interaction.isModalSubmit()) {
     if (interaction.customId === "repo_modal") {
-      console.log("not here");
+ 
       const repoUrl = interaction.fields.getTextInputValue("repo_input");
 
       const { owner, repoName } = extractRepoDetails(repoUrl);
@@ -635,9 +635,8 @@ client.on("interactionCreate", async (interaction) => {
       // Fetch data from GitHub API
       try {
         const { accessToken } = guildRepoData.get(guildId);
-        console.log("accessToken???", accessToken);
         const repoData = await fetchRepoData(owner, repoName, accessToken);
-        console.log("Repository data:", repoData !== null);
+
       } catch (error) {
         console.error("Error fetching repository data:", error);
       }
